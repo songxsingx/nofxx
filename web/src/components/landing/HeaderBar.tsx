@@ -45,15 +45,14 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
       <div className='max-w-7xl mx-auto px-4 sm:px-6 lg:px-8'>
         <div className='flex items-center justify-between h-16'>
           {/* Logo */}
-          <a href='/' className='flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer'>
-            <img src='/icons/nofx.svg' alt='NOFX Logo' className='w-8 h-8' />
+          <div className='flex items-center gap-3'>
             <span className='text-xl font-bold' style={{ color: 'var(--brand-yellow)' }}>
-              NOFX
+              AI Trading
             </span>
             <span className='text-sm hidden sm:block' style={{ color: 'var(--text-secondary)' }}>
               Agentic Trading OS
             </span>
-          </a>
+          </div>
 
           {/* Desktop Menu */}
           <div className='hidden md:flex items-center justify-between flex-1 ml-8'>

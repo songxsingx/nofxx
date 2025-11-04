@@ -142,8 +142,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('auth_user', JSON.stringify(userInfo));
         
-        // 跳转到首页
-        window.history.pushState({}, '', '/');
+        // 跳转到竞赛页面
+        window.history.pushState({}, '', '/competition');
         window.dispatchEvent(new PopStateEvent('popstate'));
         
         return { success: true, message: data.message };
@@ -175,8 +175,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('auth_token', data.token);
         localStorage.setItem('auth_user', JSON.stringify(userInfo));
         
-        // 跳转到首页
-        window.history.pushState({}, '', '/');
+        // 跳转到竞赛页面
+        window.history.pushState({}, '', '/competition');
         window.dispatchEvent(new PopStateEvent('popstate'));
         
         return { success: true, message: data.message };

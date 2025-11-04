@@ -3,7 +3,7 @@ export type Language = 'en' | 'zh';
 export const translations = {
   en: {
     // Header
-    appTitle: 'NOFX',
+    appTitle: 'AI Trading',
     subtitle: 'Multi-AI Model Trading Platform',
     aiTraders: 'AI Traders',
     details: 'Details',
@@ -22,7 +22,7 @@ export const translations = {
     dashboardNav: 'Dashboard',
 
     // Footer
-    footerTitle: 'NOFX - AI Trading System',
+    footerTitle: 'AI Trading System',
     footerWarning: '⚠️ Trading involves risk. Use at your own discretion.',
 
     // Stats Cards
@@ -420,7 +420,7 @@ export const translations = {
   },
   zh: {
     // Header
-    appTitle: 'NOFX',
+    appTitle: 'AI Trading',
     subtitle: '多AI模型交易平台',
     aiTraders: 'AI交易员',
     details: '详情',
@@ -439,7 +439,7 @@ export const translations = {
     dashboardNav: '看板',
 
     // Footer
-    footerTitle: 'NOFX - AI交易系统',
+    footerTitle: 'AI交易系统',
     footerWarning: '⚠️ 交易有风险，请谨慎使用。',
 
     // Stats Cards
