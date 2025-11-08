@@ -199,8 +199,6 @@ NexTrade is on a mission to become the **Universal AI Trading Operating System**
 
 We welcome contributions from the community! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-**💬 [NexTrade Developer Community](https://t.me/nofx_dev_community)**
-
 ---
 
 ## 🛡️ Security
