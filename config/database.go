@@ -1,17 +1,18 @@
 package config
 
 import (
-	"crypto/rand"
 	"database/sql"
 	"encoding/base32"
 	"encoding/json"
 	"fmt"
 	"log"
-	"nofx/market"
+	"math/rand"
 	"os"
 	"slices"
 	"strings"
 	"time"
+
+	"nextrade/market"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -28,6 +29,16 @@ func NewDatabase(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("打开数据库失败: %w", err)
 	}
 
+	// 设置连接池参数
+	db.SetMaxOpenConns(25)                 // 最大打开连接数
+	db.SetMaxIdleConns(10)                 // 最大空闲连接数
+	db.SetConnMaxLifetime(5 * time.Minute) // 连接最大生命周期
+
+	// 测试连接
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("数据库连接测试失败: %w", err)
+	}
+
 	database := &Database{db: db}
 	if err := database.createTables(); err != nil {
 		return nil, fmt.Errorf("创建表失败: %w", err)
@@ -37,6 +48,7 @@ func NewDatabase(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("初始化默认数据失败: %w", err)
 	}
 
+	log.Println("✓ 数据库初始化成功")
 	return database, nil
 }
 
@@ -188,6 +200,8 @@ func (d *Database) createTables() error {
 		`ALTER TABLE exchanges ADD COLUMN aster_user TEXT DEFAULT ''`,
 		`ALTER TABLE exchanges ADD COLUMN aster_signer TEXT DEFAULT ''`,
 		`ALTER TABLE exchanges ADD COLUMN aster_private_key TEXT DEFAULT ''`,
+		`ALTER TABLE exchanges ADD COLUMN gateio_passphrase TEXT DEFAULT ''`,
+		`ALTER TABLE exchanges ADD COLUMN okx_passphrase TEXT DEFAULT ''`,
 		`ALTER TABLE traders ADD COLUMN custom_prompt TEXT DEFAULT ''`,
 		`ALTER TABLE traders ADD COLUMN override_base_prompt BOOLEAN DEFAULT 0`,
 		`ALTER TABLE traders ADD COLUMN is_cross_margin BOOLEAN DEFAULT 1`,             // 默认为全仓模式
@@ -199,6 +213,12 @@ func (d *Database) createTables() error {
 		`ALTER TABLE traders ADD COLUMN use_coin_pool BOOLEAN DEFAULT 0`,               // 是否使用COIN POOL信号源
 		`ALTER TABLE traders ADD COLUMN use_oi_top BOOLEAN DEFAULT 0`,                  // 是否使用OI TOP信号源
 		`ALTER TABLE traders ADD COLUMN system_prompt_template TEXT DEFAULT 'default'`, // 系统提示词模板名称
+		`ALTER TABLE traders ADD COLUMN strategy TEXT DEFAULT 'ai'`,                    // 策略类型: "ai" 或 "hodl_band_profit"
+		`ALTER TABLE traders ADD COLUMN strategy_config TEXT DEFAULT ''`,               // 策略配置（JSON格式）
+		`ALTER TABLE traders ADD COLUMN spot_order_type TEXT DEFAULT 'market'`,         // 现货订单类型: 'market' 或 'limit'
+		`ALTER TABLE traders ADD COLUMN spot_position_size_pct INTEGER DEFAULT 100`,    // 现货每次交易使用余额百分比(0-100)
+		`ALTER TABLE traders ADD COLUMN spot_take_profit_pct INTEGER DEFAULT 20`,       // 现货止盈百分比
+		`ALTER TABLE traders ADD COLUMN spot_stop_loss_pct INTEGER DEFAULT 10`,         // 现货止损百分比
 		`ALTER TABLE ai_models ADD COLUMN custom_api_url TEXT DEFAULT ''`,              // 自定义API地址
 		`ALTER TABLE ai_models ADD COLUMN custom_model_name TEXT DEFAULT ''`,           // 自定义模型名称
 	}
@@ -241,9 +261,16 @@ func (d *Database) initDefaultData() error {
 	exchanges := []struct {
 		id, name, typ string
 	}{
-		{"binance", "Binance Futures", "binance"},
-		{"hyperliquid", "Hyperliquid", "hyperliquid"},
-		{"aster", "Aster DEX", "aster"},
+		{"binance_spot", "Binance Spot", "cex"},
+		{"binance", "Binance Futures", "cex"}, // binance = binance_futures
+		{"gateio_spot", "Gate.io Spot", "cex"},
+		{"gateio_futures", "Gate.io Futures", "cex"},
+		{"okx_spot", "OKX Spot", "cex"},
+		{"okx_futures", "OKX Futures", "cex"},
+		{"hyperliquid_spot", "Hyperliquid Spot", "dex"},
+		{"hyperliquid", "Hyperliquid Futures", "dex"}, // hyperliquid = hyperliquid_futures
+		{"aster_spot", "Aster Spot", "dex"},
+		{"aster", "Aster Futures", "dex"}, // aster = aster_futures
 	}
 
 	for _, exchange := range exchanges {
@@ -258,17 +285,17 @@ func (d *Database) initDefaultData() error {
 
 	// 初始化系统配置 - 创建所有字段，设置默认值，后续由config.json同步更新
 	systemConfigs := map[string]string{
-		"admin_mode":            "true",                                                                                // 默认开启管理员模式，便于首次使用
-		"beta_mode":             "false",                                                                             // 默认关闭内测模式
-		"api_server_port":       "8080",                                                                                // 默认API端口
-		"use_default_coins":     "true",                                                                                // 默认使用内置币种列表
-		"default_coins":         `["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","HYPEUSDT"]`, // 默认币种列表（JSON格式）
-		"max_daily_loss":        "10.0",                                                                                // 最大日损失百分比
-		"max_drawdown":          "20.0",                                                                                // 最大回撤百分比
-		"stop_trading_minutes":  "60",                                                                                  // 停止交易时间（分钟）
-		"btc_eth_leverage":      "5",                                                                                   // BTC/ETH杠杆倍数
-		"altcoin_leverage":      "5",                                                                                   // 山寨币杠杆倍数
-		"jwt_secret":            "",                                                                                    // JWT密钥，默认为空，由config.json或系统生成
+		"admin_mode":           "true",                                                                                // 默认开启管理员模式，便于首次使用
+		"beta_mode":            "false",                                                                               // 默认关闭内测模式
+		"api_server_port":      "8080",                                                                                // 默认API端口
+		"use_default_coins":    "true",                                                                                // 默认使用内置币种列表
+		"default_coins":        `["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","HYPEUSDT"]`, // 默认币种列表（JSON格式）
+		"max_daily_loss":       "10.0",                                                                                // 最大日损失百分比
+		"max_drawdown":         "20.0",                                                                                // 最大回撤百分比
+		"stop_trading_minutes": "60",                                                                                  // 停止交易时间（分钟）
+		"btc_eth_leverage":     "5",                                                                                   // BTC/ETH杠杆倍数
+		"altcoin_leverage":     "5",                                                                                   // 山寨币杠杆倍数
+		"jwt_secret":           "",                                                                                    // JWT密钥，默认为空，由config.json或系统生成
 	}
 
 	for key, value := range systemConfigs {
@@ -318,6 +345,8 @@ func (d *Database) migrateExchangesTable() error {
 			aster_user TEXT DEFAULT '',
 			aster_signer TEXT DEFAULT '',
 			aster_private_key TEXT DEFAULT '',
+			gateio_passphrase TEXT DEFAULT '',
+			okx_passphrase TEXT DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			PRIMARY KEY (id, user_id),
@@ -404,34 +433,45 @@ type ExchangeConfig struct {
 	// Hyperliquid 特定字段
 	HyperliquidWalletAddr string `json:"hyperliquidWalletAddr"`
 	// Aster 特定字段
-	AsterUser       string    `json:"asterUser"`
-	AsterSigner     string    `json:"asterSigner"`
-	AsterPrivateKey string    `json:"asterPrivateKey"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	AsterUser       string `json:"asterUser"`
+	AsterSigner     string `json:"asterSigner"`
+	AsterPrivateKey string `json:"asterPrivateKey"`
+	// Gate.io 特定字段
+	GateioPassphrase string `json:"gateioPassphrase"`
+	// OKX 特定字段
+	OKXPassphrase string    `json:"okxPassphrase"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // TraderRecord 交易员配置（数据库实体）
 type TraderRecord struct {
-	ID                   string    `json:"id"`
-	UserID               string    `json:"user_id"`
-	Name                 string    `json:"name"`
-	AIModelID            string    `json:"ai_model_id"`
-	ExchangeID           string    `json:"exchange_id"`
-	InitialBalance       float64   `json:"initial_balance"`
-	ScanIntervalMinutes  int       `json:"scan_interval_minutes"`
-	IsRunning            bool      `json:"is_running"`
-	BTCETHLeverage       int       `json:"btc_eth_leverage"`       // BTC/ETH杠杆倍数
-	AltcoinLeverage      int       `json:"altcoin_leverage"`       // 山寨币杠杆倍数
-	TradingSymbols       string    `json:"trading_symbols"`        // 交易币种，逗号分隔
-	UseCoinPool          bool      `json:"use_coin_pool"`          // 是否使用COIN POOL信号源
-	UseOITop             bool      `json:"use_oi_top"`             // 是否使用OI TOP信号源
-	CustomPrompt         string    `json:"custom_prompt"`          // 自定义交易策略prompt
-	OverrideBasePrompt   bool      `json:"override_base_prompt"`   // 是否覆盖基础prompt
-	SystemPromptTemplate string    `json:"system_prompt_template"` // 系统提示词模板名称
-	IsCrossMargin        bool      `json:"is_cross_margin"`        // 是否为全仓模式（true=全仓，false=逐仓）
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                   string  `json:"id"`
+	UserID               string  `json:"user_id"`
+	Name                 string  `json:"name"`
+	AIModelID            string  `json:"ai_model_id"`
+	ExchangeID           string  `json:"exchange_id"`
+	InitialBalance       float64 `json:"initial_balance"`
+	ScanIntervalMinutes  int     `json:"scan_interval_minutes"`
+	IsRunning            bool    `json:"is_running"`
+	BTCETHLeverage       int     `json:"btc_eth_leverage"`       // BTC/ETH杠杆倍数
+	AltcoinLeverage      int     `json:"altcoin_leverage"`       // 山寨币杠杆倍数
+	TradingSymbols       string  `json:"trading_symbols"`        // 交易币种，逗号分隔
+	UseCoinPool          bool    `json:"use_coin_pool"`          // 是否使用COIN POOL信号源
+	UseOITop             bool    `json:"use_oi_top"`             // 是否使用OI TOP信号源
+	CustomPrompt         string  `json:"custom_prompt"`          // 自定义交易策略prompt
+	OverrideBasePrompt   bool    `json:"override_base_prompt"`   // 是否覆盖基础prompt
+	SystemPromptTemplate string  `json:"system_prompt_template"` // 系统提示词模板名称
+	IsCrossMargin        bool    `json:"is_cross_margin"`        // 是否为全仓模式（true=全仓，false=逐仓）
+	Strategy             string  `json:"strategy"`               // 策略类型: "ai" 或 "hodl_band_profit"
+	StrategyConfig       string  `json:"strategy_config"`        // 策略配置（JSON格式）
+	// 现货交易配置
+	SpotOrderType       string    `json:"spot_order_type"`        // 现货订单类型: 'market' 或 'limit'
+	SpotPositionSizePct int       `json:"spot_position_size_pct"` // 现货每次交易使用余额百分比(0-100)
+	SpotTakeProfitPct   int       `json:"spot_take_profit_pct"`   // 现货止盈百分比
+	SpotStopLossPct     int       `json:"spot_stop_loss_pct"`     // 现货止损百分比
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
 }
 
 // UserSignalSource 用户信号源配置
@@ -667,6 +707,8 @@ func (d *Database) GetExchanges(userID string) ([]*ExchangeConfig, error) {
 		       COALESCE(aster_user, '') as aster_user,
 		       COALESCE(aster_signer, '') as aster_signer,
 		       COALESCE(aster_private_key, '') as aster_private_key,
+		       COALESCE(gateio_passphrase, '') as gateio_passphrase,
+		       COALESCE(okx_passphrase, '') as okx_passphrase,
 		       created_at, updated_at 
 		FROM exchanges WHERE user_id = ? ORDER BY id
 	`, userID)
@@ -684,6 +726,7 @@ func (d *Database) GetExchanges(userID string) ([]*ExchangeConfig, error) {
 			&exchange.Enabled, &exchange.APIKey, &exchange.SecretKey, &exchange.Testnet,
 			&exchange.HyperliquidWalletAddr, &exchange.AsterUser,
 			&exchange.AsterSigner, &exchange.AsterPrivateKey,
+			&exchange.GateioPassphrase, &exchange.OKXPassphrase,
 			&exchange.CreatedAt, &exchange.UpdatedAt,
 		)
 		if err != nil {
@@ -696,15 +739,16 @@ func (d *Database) GetExchanges(userID string) ([]*ExchangeConfig, error) {
 }
 
 // UpdateExchange 更新交易所配置，如果不存在则创建用户特定配置
-func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey string) error {
+func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, gateioPassphrase, okxPassphrase string) error {
 	log.Printf("🔧 UpdateExchange: userID=%s, id=%s, enabled=%v", userID, id, enabled)
 
 	// 首先尝试更新现有的用户配置
 	result, err := d.db.Exec(`
 		UPDATE exchanges SET enabled = ?, api_key = ?, secret_key = ?, testnet = ?, 
-		       hyperliquid_wallet_addr = ?, aster_user = ?, aster_signer = ?, aster_private_key = ?, updated_at = datetime('now')
+		       hyperliquid_wallet_addr = ?, aster_user = ?, aster_signer = ?, aster_private_key = ?, 
+		       gateio_passphrase = ?, okx_passphrase = ?, updated_at = datetime('now')
 		WHERE id = ? AND user_id = ?
-	`, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, id, userID)
+	`, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, gateioPassphrase, okxPassphrase, id, userID)
 	if err != nil {
 		log.Printf("❌ UpdateExchange: 更新失败: %v", err)
 		return err
@@ -725,16 +769,38 @@ func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secre
 
 		// 根据交易所ID确定基本信息
 		var name, typ string
-		if id == "binance" {
+		switch id {
+		case "binance":
 			name = "Binance Futures"
 			typ = "cex"
-		} else if id == "hyperliquid" {
-			name = "Hyperliquid"
+		case "binance_spot":
+			name = "Binance Spot"
+			typ = "cex"
+		case "gateio_spot":
+			name = "Gate.io Spot"
+			typ = "cex"
+		case "gateio_futures":
+			name = "Gate.io Futures"
+			typ = "cex"
+		case "okx_spot":
+			name = "OKX Spot"
+			typ = "cex"
+		case "okx_futures":
+			name = "OKX Futures"
+			typ = "cex"
+		case "hyperliquid":
+			name = "Hyperliquid Futures"
 			typ = "dex"
-		} else if id == "aster" {
-			name = "Aster DEX"
+		case "hyperliquid_spot":
+			name = "Hyperliquid Spot"
 			typ = "dex"
-		} else {
+		case "aster":
+			name = "Aster Futures"
+			typ = "dex"
+		case "aster_spot":
+			name = "Aster Spot"
+			typ = "dex"
+		default:
 			name = id + " Exchange"
 			typ = "cex"
 		}
@@ -744,9 +810,10 @@ func (d *Database) UpdateExchange(userID, id string, enabled bool, apiKey, secre
 		// 创建用户特定的配置，使用原始的交易所ID
 		_, err = d.db.Exec(`
 			INSERT INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, 
-			                       hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
-		`, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey)
+			                       hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key, 
+			                       gateio_passphrase, okx_passphrase, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+		`, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, gateioPassphrase, okxPassphrase)
 
 		if err != nil {
 			log.Printf("❌ UpdateExchange: 创建记录失败: %v", err)
@@ -770,21 +837,36 @@ func (d *Database) CreateAIModel(userID, id, name, provider string, enabled bool
 }
 
 // CreateExchange 创建交易所配置
-func (d *Database) CreateExchange(userID, id, name, typ string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey string) error {
+func (d *Database) CreateExchange(userID, id, name, typ string, enabled bool, apiKey, secretKey string, testnet bool, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, gateioPassphrase, okxPassphrase string) error {
 	_, err := d.db.Exec(`
-		INSERT OR IGNORE INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key) 
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey)
+		INSERT OR IGNORE INTO exchanges (id, user_id, name, type, enabled, api_key, secret_key, testnet, hyperliquid_wallet_addr, aster_user, aster_signer, aster_private_key, gateio_passphrase, okx_passphrase) 
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, id, userID, name, typ, enabled, apiKey, secretKey, testnet, hyperliquidWalletAddr, asterUser, asterSigner, asterPrivateKey, gateioPassphrase, okxPassphrase)
 	return err
 }
 
-// CreateTrader 创建交易员
+// CreateTrader 创建交易员（带事务支持）
 func (d *Database) CreateTrader(trader *TraderRecord) error {
+	// 参数验证
+	if trader.ID == "" {
+		return fmt.Errorf("交易员ID不能为空")
+	}
+	if trader.Name == "" {
+		return fmt.Errorf("交易员名称不能为空")
+	}
+	if trader.InitialBalance <= 0 {
+		return fmt.Errorf("初始余额必须大于0")
+	}
+
 	_, err := d.db.Exec(`
-		INSERT INTO traders (id, user_id, name, ai_model_id, exchange_id, initial_balance, scan_interval_minutes, is_running, btc_eth_leverage, altcoin_leverage, trading_symbols, use_coin_pool, use_oi_top, custom_prompt, override_base_prompt, system_prompt_template, is_cross_margin)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, trader.ID, trader.UserID, trader.Name, trader.AIModelID, trader.ExchangeID, trader.InitialBalance, trader.ScanIntervalMinutes, trader.IsRunning, trader.BTCETHLeverage, trader.AltcoinLeverage, trader.TradingSymbols, trader.UseCoinPool, trader.UseOITop, trader.CustomPrompt, trader.OverrideBasePrompt, trader.SystemPromptTemplate, trader.IsCrossMargin)
-	return err
+		INSERT INTO traders (id, user_id, name, ai_model_id, exchange_id, initial_balance, scan_interval_minutes, is_running, btc_eth_leverage, altcoin_leverage, trading_symbols, use_coin_pool, use_oi_top, custom_prompt, override_base_prompt, system_prompt_template, is_cross_margin, strategy, strategy_config, spot_order_type, spot_position_size_pct, spot_take_profit_pct, spot_stop_loss_pct)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, trader.ID, trader.UserID, trader.Name, trader.AIModelID, trader.ExchangeID, trader.InitialBalance, trader.ScanIntervalMinutes, trader.IsRunning, trader.BTCETHLeverage, trader.AltcoinLeverage, trader.TradingSymbols, trader.UseCoinPool, trader.UseOITop, trader.CustomPrompt, trader.OverrideBasePrompt, trader.SystemPromptTemplate, trader.IsCrossMargin, trader.Strategy, trader.StrategyConfig, trader.SpotOrderType, trader.SpotPositionSizePct, trader.SpotTakeProfitPct, trader.SpotStopLossPct)
+
+	if err != nil {
+		return fmt.Errorf("创建交易员失败: %w", err)
+	}
+	return nil
 }
 
 // GetTraders 获取用户的交易员
@@ -796,7 +878,14 @@ func (d *Database) GetTraders(userID string) ([]*TraderRecord, error) {
 		       COALESCE(use_coin_pool, 0) as use_coin_pool, COALESCE(use_oi_top, 0) as use_oi_top,
 		       COALESCE(custom_prompt, '') as custom_prompt, COALESCE(override_base_prompt, 0) as override_base_prompt,
 		       COALESCE(system_prompt_template, 'default') as system_prompt_template,
-		       COALESCE(is_cross_margin, 1) as is_cross_margin, created_at, updated_at
+		       COALESCE(is_cross_margin, 1) as is_cross_margin,
+		       COALESCE(strategy, 'ai') as strategy,
+		       COALESCE(strategy_config, '') as strategy_config,
+		       COALESCE(spot_order_type, 'market') as spot_order_type,
+		       COALESCE(spot_position_size_pct, 100) as spot_position_size_pct,
+		       COALESCE(spot_take_profit_pct, 20) as spot_take_profit_pct,
+		       COALESCE(spot_stop_loss_pct, 10) as spot_stop_loss_pct,
+		       created_at, updated_at
 		FROM traders WHERE user_id = ? ORDER BY created_at DESC
 	`, userID)
 	if err != nil {
@@ -814,6 +903,8 @@ func (d *Database) GetTraders(userID string) ([]*TraderRecord, error) {
 			&trader.UseCoinPool, &trader.UseOITop,
 			&trader.CustomPrompt, &trader.OverrideBasePrompt, &trader.SystemPromptTemplate,
 			&trader.IsCrossMargin,
+			&trader.Strategy, &trader.StrategyConfig,
+			&trader.SpotOrderType, &trader.SpotPositionSizePct, &trader.SpotTakeProfitPct, &trader.SpotStopLossPct,
 			&trader.CreatedAt, &trader.UpdatedAt,
 		)
 		if err != nil {
@@ -837,13 +928,17 @@ func (d *Database) UpdateTrader(trader *TraderRecord) error {
 		UPDATE traders SET
 			name = ?, ai_model_id = ?, exchange_id = ?, initial_balance = ?,
 			scan_interval_minutes = ?, btc_eth_leverage = ?, altcoin_leverage = ?,
-			trading_symbols = ?, custom_prompt = ?, override_base_prompt = ?,
-			system_prompt_template = ?, is_cross_margin = ?, updated_at = CURRENT_TIMESTAMP
+			trading_symbols = ?, use_coin_pool = ?, use_oi_top = ?, custom_prompt = ?, override_base_prompt = ?,
+			system_prompt_template = ?, is_cross_margin = ?, strategy = ?, strategy_config = ?,
+			spot_order_type = ?, spot_position_size_pct = ?, spot_take_profit_pct = ?, spot_stop_loss_pct = ?,
+			updated_at = CURRENT_TIMESTAMP
 		WHERE id = ? AND user_id = ?
 	`, trader.Name, trader.AIModelID, trader.ExchangeID, trader.InitialBalance,
 		trader.ScanIntervalMinutes, trader.BTCETHLeverage, trader.AltcoinLeverage,
-		trader.TradingSymbols, trader.CustomPrompt, trader.OverrideBasePrompt,
-		trader.SystemPromptTemplate, trader.IsCrossMargin, trader.ID, trader.UserID)
+		trader.TradingSymbols, trader.UseCoinPool, trader.UseOITop, trader.CustomPrompt, trader.OverrideBasePrompt,
+		trader.SystemPromptTemplate, trader.IsCrossMargin, trader.Strategy, trader.StrategyConfig,
+		trader.SpotOrderType, trader.SpotPositionSizePct, trader.SpotTakeProfitPct, trader.SpotStopLossPct,
+		trader.ID, trader.UserID)
 	return err
 }
 
@@ -877,6 +972,12 @@ func (d *Database) GetTraderConfig(userID, traderID string) (*TraderRecord, *AIM
 			COALESCE(t.override_base_prompt, 0) as override_base_prompt,
 			COALESCE(t.system_prompt_template, 'default') as system_prompt_template,
 			COALESCE(t.is_cross_margin, 1) as is_cross_margin,
+			COALESCE(t.strategy, 'ai') as strategy,
+			COALESCE(t.strategy_config, '') as strategy_config,
+			COALESCE(t.spot_order_type, 'market') as spot_order_type,
+			COALESCE(t.spot_position_size_pct, 100) as spot_position_size_pct,
+			COALESCE(t.spot_take_profit_pct, 20) as spot_take_profit_pct,
+			COALESCE(t.spot_stop_loss_pct, 10) as spot_stop_loss_pct,
 			t.created_at, t.updated_at,
 			a.id, a.user_id, a.name, a.provider, a.enabled, a.api_key,
 			COALESCE(a.custom_api_url, '') as custom_api_url,
@@ -899,6 +1000,8 @@ func (d *Database) GetTraderConfig(userID, traderID string) (*TraderRecord, *AIM
 		&trader.UseCoinPool, &trader.UseOITop,
 		&trader.CustomPrompt, &trader.OverrideBasePrompt, &trader.SystemPromptTemplate,
 		&trader.IsCrossMargin,
+		&trader.Strategy, &trader.StrategyConfig,
+		&trader.SpotOrderType, &trader.SpotPositionSizePct, &trader.SpotTakeProfitPct, &trader.SpotStopLossPct,
 		&trader.CreatedAt, &trader.UpdatedAt,
 		&aiModel.ID, &aiModel.UserID, &aiModel.Name, &aiModel.Provider, &aiModel.Enabled, &aiModel.APIKey,
 		&aiModel.CustomAPIURL, &aiModel.CustomModelName,
@@ -994,11 +1097,6 @@ func (d *Database) GetCustomCoins() []string {
 	return symbols
 }
 
-// Close 关闭数据库连接
-func (d *Database) Close() error {
-	return d.db.Close()
-}
-
 // LoadBetaCodesFromFile 从文件加载内测码到数据库
 func (d *Database) LoadBetaCodesFromFile(filePath string) error {
 	// 读取文件内容
@@ -1037,7 +1135,7 @@ func (d *Database) LoadBetaCodesFromFile(filePath string) error {
 			log.Printf("插入内测码 %s 失败: %v", code, err)
 			continue
 		}
-		
+
 		if rowsAffected, _ := result.RowsAffected(); rowsAffected > 0 {
 			insertedCount++
 		}
@@ -1099,4 +1197,42 @@ func (d *Database) GetBetaCodeStats() (total, used int, err error) {
 	}
 
 	return total, used, nil
+}
+
+// HealthCheck 数据库健康检查
+func (d *Database) HealthCheck() error {
+	if err := d.db.Ping(); err != nil {
+		return fmt.Errorf("数据库连接失败: %w", err)
+	}
+
+	// 检查连接池状态
+	stats := d.db.Stats()
+	if stats.OpenConnections >= stats.MaxOpenConnections {
+		log.Printf("⚠️ 数据库连接池已满: %d/%d", stats.OpenConnections, stats.MaxOpenConnections)
+	}
+
+	return nil
+}
+
+// GetStats 获取数据库统计信息
+func (d *Database) GetStats() map[string]interface{} {
+	stats := d.db.Stats()
+	return map[string]interface{}{
+		"max_open_connections": stats.MaxOpenConnections,
+		"open_connections":     stats.OpenConnections,
+		"in_use":               stats.InUse,
+		"idle":                 stats.Idle,
+		"wait_count":           stats.WaitCount,
+		"wait_duration_ms":     stats.WaitDuration.Milliseconds(),
+		"max_idle_closed":      stats.MaxIdleClosed,
+		"max_lifetime_closed":  stats.MaxLifetimeClosed,
+	}
+}
+
+// Close 关闭数据库连接
+func (d *Database) Close() error {
+	if d.db != nil {
+		return d.db.Close()
+	}
+	return nil
 }

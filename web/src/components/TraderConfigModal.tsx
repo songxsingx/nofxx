@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import type { AIModel, Exchange, CreateTraderRequest } from '../types';
+import type { AIModel, Exchange, CreateTraderRequest, HODLBandProfitConfig } from '../types';
 import { useLanguage } from '../contexts/LanguageContext';
 import { t } from '../i18n/translations';
 
@@ -25,6 +25,14 @@ interface TraderConfigData {
   use_oi_top: boolean;
   initial_balance: number;
   scan_interval_minutes: number;
+  // 现货特有配置
+  spot_order_type?: 'market' | 'limit';  // 订单类型：市价单/限价单
+  spot_position_size_pct?: number;       // 每次交易使用余额百分比（0-100）
+  spot_take_profit_pct?: number;         // 止盈百分比
+  spot_stop_loss_pct?: number;           // 止损百分比
+  // HODL波段盈利定投策略配置
+  strategy?: string;                     // "ai" or "hodl_band_profit"
+  strategy_config?: HODLBandProfitConfig;
 }
 
 interface TraderConfigModalProps {
@@ -35,6 +43,7 @@ interface TraderConfigModalProps {
   availableModels?: AIModel[];
   availableExchanges?: Exchange[];
   onSave?: (data: CreateTraderRequest) => Promise<void>;
+  tradingMode?: 'spot' | 'futures' | '';
 }
 
 export function TraderConfigModal({ 
@@ -44,9 +53,16 @@ export function TraderConfigModal({
   isEditMode = false,
   availableModels = [],
   availableExchanges = [],
-  onSave 
+  onSave,
+  tradingMode = ''
 }: TraderConfigModalProps) {
   const { language } = useLanguage();
+  
+  // 根据交易模式过滤交易所，如果未设置模式则显示全部
+  const filteredExchanges = !tradingMode ? availableExchanges : availableExchanges.filter(exchange => {
+    const isSpot = exchange.id?.includes('_spot');
+    return tradingMode === 'spot' ? isSpot : !isSpot;
+  });
   const [formData, setFormData] = useState<TraderConfigData>({
     trader_name: '',
     ai_model: '',
@@ -62,6 +78,22 @@ export function TraderConfigModal({
     use_oi_top: false,
     initial_balance: 1000,
     scan_interval_minutes: 3,
+    // 现货默认配置
+    spot_order_type: 'market',
+    spot_position_size_pct: 100,
+    spot_take_profit_pct: 20,
+    spot_stop_loss_pct: 10,
+    // HODL波段盈利定投策略默认配置
+    strategy: 'ai',
+    strategy_config: {
+      symbol: '',
+      base_amount_usdt: 100,
+      profit_trigger_pct: 10,
+      reinvest_ratio: 0.5,
+      interval_hours: 1,
+      take_profit_pct: 100,
+      stop_loss_pct: 10,
+    },
   });
   const [isSaving, setIsSaving] = useState(false);
   const [availableCoins, setAvailableCoins] = useState<string[]>([]);
@@ -69,19 +101,20 @@ export function TraderConfigModal({
   const [showCoinSelector, setShowCoinSelector] = useState(false);
   const [promptTemplates, setPromptTemplates] = useState<{name: string}[]>([]);
 
+  // 判断当前选择的交易所是否为现货
+  const selectedExchange = availableExchanges.find(e => e.id === formData.exchange_id);
+  const isSpotExchange = selectedExchange?.id?.includes('_spot') || false;
+
+  // 首次打开模态框时初始化默认值
   useEffect(() => {
-    if (traderData) {
-      setFormData(traderData);
-      // 设置已选择的币种
-      if (traderData.trading_symbols) {
-        const coins = traderData.trading_symbols.split(',').map(s => s.trim()).filter(s => s);
-        setSelectedCoins(coins);
-      }
-    } else if (!isEditMode) {
+    if (isOpen && !isEditMode && !traderData) {
+      const defaultExchangeId = filteredExchanges.length > 0 ? filteredExchanges[0].id : '';
+      const defaultModelId = availableModels.length > 0 ? availableModels[0].id : '';
+      
       setFormData({
         trader_name: '',
-        ai_model: availableModels[0]?.id || '',
-        exchange_id: availableExchanges[0]?.id || '',
+        ai_model: defaultModelId,
+        exchange_id: defaultExchangeId,
         btc_eth_leverage: 5,
         altcoin_leverage: 3,
         trading_symbols: '',
@@ -93,7 +126,44 @@ export function TraderConfigModal({
         use_oi_top: false,
         initial_balance: 1000,
         scan_interval_minutes: 3,
+        // 现货默认配置
+        spot_order_type: 'market',
+        spot_position_size_pct: 100,
+        spot_take_profit_pct: 20,
+        spot_stop_loss_pct: 10,
+        // HODL波段盈利定投策略默认配置
+        strategy: 'ai',
+        strategy_config: {
+          symbol: '',
+          base_amount_usdt: 100,
+          profit_trigger_pct: 10,
+          reinvest_ratio: 0.5,
+          interval_hours: 1,
+          take_profit_pct: 100,
+          stop_loss_pct: 10,
+        },
       });
+    }
+  }, [isOpen, isEditMode, traderData]);
+
+  useEffect(() => {
+    if (traderData) {
+      setFormData(traderData);
+      // 设置已选择的币种
+      if (traderData.trading_symbols) {
+        const coins = traderData.trading_symbols.split(',').map(s => s.trim()).filter(s => s);
+        setSelectedCoins(coins);
+      }
+    } else if (!isEditMode && isOpen) {
+      // 只在首次打开模态框时初始化，不要在filteredExchanges变化时重置
+      const defaultExchangeId = filteredExchanges.length > 0 ? filteredExchanges[0].id : '';
+      const defaultModelId = availableModels.length > 0 ? availableModels[0].id : '';
+      
+      setFormData(prev => ({
+        ...prev,
+        ai_model: prev.ai_model || defaultModelId,
+        exchange_id: prev.exchange_id || defaultExchangeId,
+      }));
     }
     // 确保旧数据也有默认的 system_prompt_template
     if (traderData && !traderData.system_prompt_template) {
@@ -101,8 +171,14 @@ export function TraderConfigModal({
         ...prev,
         system_prompt_template: 'default'
       }));
+    } else if (!traderData && !isEditMode && isOpen) {
+      // 初始化时设置默认的 system_prompt_template
+      setFormData(prev => ({
+        ...prev,
+        system_prompt_template: 'default'
+      }));
     }
-  }, [traderData, isEditMode, availableModels, availableExchanges]);
+  }, [traderData, isEditMode, isOpen]);
 
   // 获取系统配置中的币种列表
   useEffect(() => {
@@ -148,7 +224,53 @@ export function TraderConfigModal({
 
   if (!isOpen) return null;
 
+  console.log('🔍 TraderConfigModal 渲染:', {
+    tradingMode,
+    availableModels: availableModels.length,
+    availableExchanges: availableExchanges.length,
+    filteredExchanges: filteredExchanges.length,
+    formData_ai_model: formData.ai_model,
+    formData_exchange_id: formData.exchange_id,
+  });
+
+  // 检查是否有可用的模型和交易所
+  if (availableModels.length === 0 || filteredExchanges.length === 0) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
+        <div className="bg-[#1E2329] border border-[#2B3139] rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+          <div className="text-center">
+            <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center mx-auto mb-4">
+              <span className="text-4xl">⚠️</span>
+            </div>
+            <h3 className="text-xl font-bold text-[#EAECEF] mb-2">无法创建交易员</h3>
+            <div className="text-[#848E9C] mb-6 space-y-2">
+              {availableModels.length === 0 && (
+                <p>• 请先配置 AI 模型</p>
+              )}
+              {filteredExchanges.length === 0 && tradingMode === 'spot' && (
+                <p>• 请先配置现货交易所（带 _spot 后缀）</p>
+              )}
+              {filteredExchanges.length === 0 && tradingMode === 'futures' && (
+                <p>• 请先配置合约交易所</p>
+              )}
+              {filteredExchanges.length === 0 && !tradingMode && (
+                <p>• 请先配置交易所</p>
+              )}
+            </div>
+            <button
+              onClick={onClose}
+              className="w-full px-4 py-2 bg-[#F0B90B] text-black rounded-lg font-semibold hover:bg-[#E1A706] transition-colors"
+            >
+              确定
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   const handleInputChange = (field: keyof TraderConfigData, value: any) => {
+    console.log('📝 输入变更:', field, '=', value);
     setFormData(prev => ({ ...prev, [field]: value }));
     
     // 如果是直接编辑trading_symbols，同步更新selectedCoins
@@ -156,6 +278,17 @@ export function TraderConfigModal({
       const coins = value.split(',').map((s: string) => s.trim()).filter((s: string) => s);
       setSelectedCoins(coins);
     }
+  };
+
+  // 处理HODL策略配置变更
+  const handleStrategyConfigChange = (field: keyof HODLBandProfitConfig, value: any) => {
+    setFormData(prev => ({
+      ...prev,
+      strategy_config: {
+        ...prev.strategy_config!,
+        [field]: value
+      }
+    }));
   };
 
   const handleCoinToggle = (coin: string) => {
@@ -177,22 +310,34 @@ export function TraderConfigModal({
         name: formData.trader_name,
         ai_model_id: formData.ai_model,
         exchange_id: formData.exchange_id,
-        btc_eth_leverage: formData.btc_eth_leverage,
-        altcoin_leverage: formData.altcoin_leverage,
-        trading_symbols: formData.trading_symbols,
-        custom_prompt: formData.custom_prompt,
-        override_base_prompt: formData.override_base_prompt,
-        system_prompt_template: formData.system_prompt_template,
-        is_cross_margin: formData.is_cross_margin,
-        use_coin_pool: formData.use_coin_pool,
-        use_oi_top: formData.use_oi_top,
-        initial_balance: formData.initial_balance,
-        scan_interval_minutes: formData.scan_interval_minutes,
+        btc_eth_leverage: formData.btc_eth_leverage || 5,
+        altcoin_leverage: formData.altcoin_leverage || 3,
+        trading_symbols: formData.trading_symbols || '',
+        custom_prompt: formData.custom_prompt || '',
+        override_base_prompt: formData.override_base_prompt || false,
+        system_prompt_template: formData.system_prompt_template || 'default',
+        is_cross_margin: formData.is_cross_margin !== undefined ? formData.is_cross_margin : true,
+        use_coin_pool: formData.use_coin_pool || false,
+        use_oi_top: formData.use_oi_top || false,
+        initial_balance: formData.initial_balance || 1000,
+        scan_interval_minutes: formData.scan_interval_minutes || 3,
+        // HODL波段盈利定投策略配置
+        strategy: formData.strategy || 'ai',
+        strategy_config: formData.strategy === 'hodl_band_profit' ? formData.strategy_config : undefined,
+        // 现货交易配置
+        spot_order_type: formData.spot_order_type || 'market',
+        spot_position_size_pct: formData.spot_position_size_pct || 100,
+        spot_take_profit_pct: formData.spot_take_profit_pct || 20,
+        spot_stop_loss_pct: formData.spot_stop_loss_pct || 10,
       };
+      
+      console.log('📤 发送保存请求:', saveData);
+      
       await onSave(saveData);
       onClose();
     } catch (error) {
       console.error('保存失败:', error);
+      alert(`保存失败: ${error instanceof Error ? error.message : '未知错误'}`);
     } finally {
       setIsSaving(false);
     }
@@ -267,7 +412,7 @@ export function TraderConfigModal({
                     onChange={(e) => handleInputChange('exchange_id', e.target.value)}
                     className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
                   >
-                    {availableExchanges.map(exchange => (
+                    {filteredExchanges.map(exchange => (
                       <option key={exchange.id} value={exchange.id}>
                         {getShortName(exchange.name || exchange.id).toUpperCase()}
                       </option>
@@ -286,33 +431,36 @@ export function TraderConfigModal({
             <div className="space-y-4">
               {/* 第一行：保证金模式和初始余额 */}
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-[#EAECEF] block mb-2">保证金模式</label>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleInputChange('is_cross_margin', true)}
-                      className={`flex-1 px-3 py-2 rounded text-sm ${
-                        formData.is_cross_margin 
-                          ? 'bg-[#F0B90B] text-black' 
-                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
-                      }`}
-                    >
-                      全仓
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleInputChange('is_cross_margin', false)}
-                      className={`flex-1 px-3 py-2 rounded text-sm ${
-                        !formData.is_cross_margin 
-                          ? 'bg-[#F0B90B] text-black' 
-                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
-                      }`}
-                    >
-                      逐仓
-                    </button>
+                {/* 仅合约交易所显示保证金模式 */}
+                {!isSpotExchange && (
+                  <div>
+                    <label className="text-sm text-[#EAECEF] block mb-2">保证金模式</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleInputChange('is_cross_margin', true)}
+                        className={`flex-1 px-3 py-2 rounded text-sm ${
+                          formData.is_cross_margin 
+                            ? 'bg-[#F0B90B] text-black' 
+                            : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                        }`}
+                      >
+                        全仓
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleInputChange('is_cross_margin', false)}
+                        className={`flex-1 px-3 py-2 rounded text-sm ${
+                          !formData.is_cross_margin 
+                            ? 'bg-[#F0B90B] text-black' 
+                            : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                        }`}
+                      >
+                        逐仓
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
                 <div>
                   <label className="text-sm text-[#EAECEF] block mb-2">初始余额 ($)</label>
                   <input
@@ -344,31 +492,33 @@ export function TraderConfigModal({
                 <div></div>
               </div>
 
-              {/* 第三行：杠杆设置 */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-[#EAECEF] block mb-2">BTC/ETH 杠杆</label>
-                  <input
-                    type="number"
-                    value={formData.btc_eth_leverage}
-                    onChange={(e) => handleInputChange('btc_eth_leverage', Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
-                    min="1"
-                    max="125"
-                  />
+              {/* 第三行：杠杆设置（仅合约交易所显示） */}
+              {!isSpotExchange && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-[#EAECEF] block mb-2">BTC/ETH 杠杆</label>
+                    <input
+                      type="number"
+                      value={formData.btc_eth_leverage}
+                      onChange={(e) => handleInputChange('btc_eth_leverage', Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                      min="1"
+                      max="125"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-sm text-[#EAECEF] block mb-2">山寨币杠杆</label>
+                    <input
+                      type="number"
+                      value={formData.altcoin_leverage}
+                      onChange={(e) => handleInputChange('altcoin_leverage', Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                      min="1"
+                      max="75"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-sm text-[#EAECEF] block mb-2">山寨币杠杆</label>
-                  <input
-                    type="number"
-                    value={formData.altcoin_leverage}
-                    onChange={(e) => handleInputChange('altcoin_leverage', Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
-                    min="1"
-                    max="75"
-                  />
-                </div>
-              </div>
+              )}
 
               {/* 第三行：交易币种 */}
               <div>
@@ -413,8 +563,257 @@ export function TraderConfigModal({
                   </div>
                 )}
               </div>
+
+              {/* 现货特有配置（仅现货交易所显示） */}
+              {isSpotExchange && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">订单类型</label>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleInputChange('spot_order_type', 'market')}
+                          className={`flex-1 px-3 py-2 rounded text-sm ${
+                            formData.spot_order_type === 'market'
+                              ? 'bg-[#F0B90B] text-black' 
+                              : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                          }`}
+                        >
+                          市价单
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleInputChange('spot_order_type', 'limit')}
+                          className={`flex-1 px-3 py-2 rounded text-sm ${
+                            formData.spot_order_type === 'limit'
+                              ? 'bg-[#F0B90B] text-black' 
+                              : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                          }`}
+                        >
+                          限价单
+                        </button>
+                      </div>
+                      <p className="text-xs text-[#848E9C] mt-1">市价单快速成交，限价单可设定价格</p>
+                    </div>
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">仓位比例 (%)</label>
+                      <input
+                        type="number"
+                        value={formData.spot_position_size_pct}
+                        onChange={(e) => handleInputChange('spot_position_size_pct', Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                        min="1"
+                        max="100"
+                        step="1"
+                      />
+                      <p className="text-xs text-[#848E9C] mt-1">每次交易使用余额的百分比</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">止盈比例 (%)</label>
+                      <input
+                        type="number"
+                        value={formData.spot_take_profit_pct}
+                        onChange={(e) => handleInputChange('spot_take_profit_pct', Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                        min="1"
+                        max="1000"
+                        step="1"
+                      />
+                      <p className="text-xs text-[#848E9C] mt-1">达到该涨幅后自动卖出</p>
+                    </div>
+                    <div>
+                      <label className="text-sm text-[#EAECEF] block mb-2">止损比例 (%)</label>
+                      <input
+                        type="number"
+                        value={formData.spot_stop_loss_pct}
+                        onChange={(e) => handleInputChange('spot_stop_loss_pct', Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                        min="1"
+                        max="100"
+                        step="1"
+                      />
+                      <p className="text-xs text-[#848E9C] mt-1">跌破该比例后自动卖出</p>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
+
+          {/* HODL 波段盈利定投策略配置（仅现货交易所显示） */}
+          {isSpotExchange && (
+            <div className="bg-[#0B0E11] border border-[#2B3139] rounded-lg p-5">
+              <h3 className="text-lg font-semibold text-[#EAECEF] mb-5 flex items-center gap-2">
+                💰 HODL 单币波段盈利定投
+              </h3>
+              <div className="space-y-4">
+                {/* 策略开关 */}
+                <div className="flex items-center justify-between p-4 bg-[#1E2329] rounded-lg border border-[#2B3139]">
+                  <div className="flex-1">
+                    <div className="text-sm font-semibold text-[#EAECEF] mb-1">启用波段盈利定投策略</div>
+                    <div className="text-xs text-[#848E9C]">
+                      只囤一个币（如BTC），盈利{formData.strategy_config?.profit_trigger_pct || 10}% → {(formData.strategy_config?.reinvest_ratio || 0.5) * 100}% 再投，本金不动，盈利滚雪球
+                    </div>
+                    <div className="text-xs text-green-500 mt-1">
+                      ✅ 双轨模式：HODL后台监控（囤1小时检查） + AI主动交易并行运行
+                    </div>
+                    <div className="text-xs text-yellow-500 mt-1">
+                      ⚠️ 合约交易员不支持HODL策略（有爆仓风险）
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange('strategy', 'hodl_band_profit')}
+                      className={`px-4 py-2 rounded text-sm ${
+                        formData.strategy === 'hodl_band_profit'
+                          ? 'bg-[#F0B90B] text-black' 
+                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                      }`}
+                    >
+                      启用
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleInputChange('strategy', 'ai')}
+                      className={`px-4 py-2 rounded text-sm ${
+                        formData.strategy === 'ai'
+                          ? 'bg-[#F0B90B] text-black' 
+                          : 'bg-[#0B0E11] text-[#848E9C] border border-[#2B3139]'
+                      }`}
+                    >
+                      关闭
+                    </button>
+                  </div>
+                </div>
+
+                {/* 策略详细配置（仅启用时显示） */}
+                {formData.strategy === 'hodl_band_profit' && (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">
+                          目标币种 <span className="text-[#848E9C]">(可选)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={formData.strategy_config?.symbol || ''}
+                          onChange={(e) => handleStrategyConfigChange('symbol', e.target.value.toUpperCase())}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          placeholder="如：BTCUSDT（留空则AI自行决策）"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">留空则使用AI波段盈利策略</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">初始投入金额 ($)</label>
+                        <input
+                          type="number"
+                          value={formData.strategy_config?.base_amount_usdt || 100}
+                          onChange={(e) => handleStrategyConfigChange('base_amount_usdt', Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          min="10"
+                          step="10"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">首次买入使用的USDT金额</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">盈利触发比例 (%)</label>
+                        <input
+                          type="number"
+                          value={formData.strategy_config?.profit_trigger_pct || 10}
+                          onChange={(e) => handleStrategyConfigChange('profit_trigger_pct', Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          min="1"
+                          max="1000"
+                          step="1"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">盈利达到此比例时触发再投资</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">再投资比例 (%)</label>
+                        <input
+                          type="number"
+                          value={(formData.strategy_config?.reinvest_ratio || 0.5) * 100}
+                          onChange={(e) => handleStrategyConfigChange('reinvest_ratio', Number(e.target.value) / 100)}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          min="1"
+                          max="100"
+                          step="1"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">盈利中用于再投资的比例</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">检查间隔 (小时)</label>
+                        <input
+                          type="number"
+                          value={formData.strategy_config?.interval_hours || 1}
+                          onChange={(e) => handleStrategyConfigChange('interval_hours', Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          min="1"
+                          max="24"
+                          step="1"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">执行策略的时间间隔</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">止盈比例 (%)</label>
+                        <input
+                          type="number"
+                          value={formData.strategy_config?.take_profit_pct || 100}
+                          onChange={(e) => handleStrategyConfigChange('take_profit_pct', Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          min="1"
+                          max="1000"
+                          step="1"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">全部持仓止盈比例</p>
+                      </div>
+                      <div>
+                        <label className="text-sm text-[#EAECEF] block mb-2">止损比例 (%)</label>
+                        <input
+                          type="number"
+                          value={formData.strategy_config?.stop_loss_pct || 10}
+                          onChange={(e) => handleStrategyConfigChange('stop_loss_pct', Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-[#0B0E11] border border-[#2B3139] rounded text-[#EAECEF] focus:border-[#F0B90B] focus:outline-none"
+                          min="1"
+                          max="100"
+                          step="1"
+                        />
+                        <p className="text-xs text-[#848E9C] mt-1">全部持仓止损比例</p>
+                      </div>
+                    </div>
+
+                    {/* 策略说明 */}
+                    <div className="p-4 bg-[#1E2329] rounded-lg border border-[#2B3139]">
+                      <div className="text-xs text-[#848E9C] space-y-1">
+                        <div className="flex items-start gap-2">
+                          <span className="text-[#F0B90B]">💡</span>
+                          <span>策略模式：{formData.strategy_config?.symbol ? `单币囤币（${formData.strategy_config.symbol}）` : 'AI智能波段（多币种自动选择）'}</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-[#F0B90B]">📈</span>
+                          <span>盈利{formData.strategy_config?.profit_trigger_pct || 10}%时，将盈利的{(formData.strategy_config?.reinvest_ratio || 0.5) * 100}%再投入，实现复利增长</span>
+                        </div>
+                        <div className="flex items-start gap-2">
+                          <span className="text-[#F0B90B]">🔒</span>
+                          <span>本金不动，仅用盈利滚雪球，降低风险</span>
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Signal Sources */}
           <div className="bg-[#0B0E11] border border-[#2B3139] rounded-lg p-5">
@@ -461,6 +860,10 @@ export function TraderConfigModal({
                     <option key={template.name} value={template.name}>
                       {template.name === 'default' ? 'Default (默认稳健)' :
                        template.name === 'aggressive' ? 'Aggressive (激进)' :
+                       template.name === 'spot' ? 'Spot (现货专用 - 无杠杆长期持有)' :
+                       template.name === 'adaptive' ? 'Adaptive (自适应)' :
+                       template.name === 'nextrade' ? 'NexTrade (极简主义)' :
+                       template.name === 'taro_long_prompts' ? 'Taro (高级策略)' :
                        template.name.charAt(0).toUpperCase() + template.name.slice(1)}
                     </option>
                   ))}

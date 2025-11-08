@@ -49,23 +49,23 @@ export default function HeroSection({ language }: HeroSectionProps) {
             </motion.p>
 
             <div className='flex items-center gap-3 flex-wrap'>
-              <motion.a href='https://github.com/tinkle-community/nofx' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
+              <motion.a href='https://github.com/tinkle-community/nextrade' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
                 <img
-                  src='https://img.shields.io/github/stars/tinkle-community/nofx?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
+                  src='https://img.shields.io/github/stars/tinkle-community/nextrade?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
                   alt='GitHub Stars'
                   className='h-7'
                 />
               </motion.a>
-              <motion.a href='https://github.com/tinkle-community/nofx/network/members' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
+              <motion.a href='https://github.com/tinkle-community/nextrade/network/members' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
                 <img
-                  src='https://img.shields.io/github/forks/tinkle-community/nofx?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
+                  src='https://img.shields.io/github/forks/tinkle-community/nextrade?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
                   alt='GitHub Forks'
                   className='h-7'
                 />
               </motion.a>
-              <motion.a href='https://github.com/tinkle-community/nofx/graphs/contributors' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
+              <motion.a href='https://github.com/tinkle-community/nextrade/graphs/contributors' target='_blank' rel='noopener noreferrer' whileHover={{ scale: 1.05 }} transition={{ type: 'spring', stiffness: 400 }}>
                 <img
-                  src='https://img.shields.io/github/contributors/tinkle-community/nofx?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
+                  src='https://img.shields.io/github/contributors/tinkle-community/nextrade?style=for-the-badge&logo=github&logoColor=white&color=F0B90B&labelColor=0A0A0A'
                   alt='GitHub Contributors'
                   className='h-7'
                 />
@@ -108,7 +108,7 @@ export default function HeroSection({ language }: HeroSectionProps) {
             {/* Background Layer */}
             <motion.img 
               src='/images/hand-bg.png' 
-              alt='NOFX Platform Background' 
+              alt='AI Trading Platform Background' 
               className='w-full opacity-90'
               style={{ opacity, scale }}
               whileHover={{ scale: 1.02 }}

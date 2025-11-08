@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"nofx/decision"
-	"nofx/logger"
-	"nofx/market"
-	"nofx/mcp"
-	"nofx/pool"
+	"nextrade/backend/exchange"
+	"nextrade/backend/strategy"
+	"nextrade/decision"
+	"nextrade/logger"
+	"nextrade/market"
+	"nextrade/mcp"
+	"nextrade/pool"
 	"strings"
 	"time"
 )
@@ -26,6 +28,7 @@ type AutoTraderConfig struct {
 	// 币安API配置
 	BinanceAPIKey    string
 	BinanceSecretKey string
+	BinanceTestnet   bool // 币安测试网开关
 
 	// Hyperliquid配置
 	HyperliquidPrivateKey string
@@ -73,6 +76,11 @@ type AutoTraderConfig struct {
 
 	// 系统提示词模板
 	SystemPromptTemplate string // 系统提示词模板名称（如 "default", "aggressive"）
+
+	// 策略配置
+	Strategy             string                         // 策略类型: "ai" 或 "hodl_band_profit"
+	HODLBandProfitConfig *strategy.HODLBandProfitConfig // HODL波段盈利策略配置
+	ExchangeConfig       map[string]interface{}         // 交易所配置
 }
 
 // AutoTrader 自动交易器
@@ -95,9 +103,10 @@ type AutoTrader struct {
 	lastResetTime         time.Time
 	stopUntil             time.Time
 	isRunning             bool
-	startTime             time.Time        // 系统启动时间
-	callCount             int              // AI调用次数
-	positionFirstSeenTime map[string]int64 // 持仓首次出现时间 (symbol_side -> timestamp毫秒)
+	startTime             time.Time         // 系统启动时间
+	callCount             int               // AI调用次数
+	positionFirstSeenTime map[string]int64  // 持仓首次出现时间 (symbol_side -> timestamp毫秒)
+	exchangeClient        exchange.Exchange // 统一交易所客户端
 }
 
 // NewAutoTrader 创建自动交易器
@@ -166,15 +175,38 @@ func NewAutoTrader(config AutoTraderConfig) (*AutoTrader, error) {
 	switch config.Exchange {
 	case "binance":
 		log.Printf("🏦 [%s] 使用币安合约交易", config.Name)
-		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey)
+		trader = NewFuturesTrader(config.BinanceAPIKey, config.BinanceSecretKey, config.BinanceTestnet)
+	case "binance_spot":
+		log.Printf("🏦 [%s] 使用币安现货交易", config.Name)
+		trader = NewSpotTrader(config.BinanceAPIKey, config.BinanceSecretKey, config.BinanceTestnet)
+	case "gateio_spot", "gateio_futures":
+		log.Printf("🏦 [%s] 使用Gate.io交易 (%s)", config.Name, config.Exchange)
+		// Gate.io使用简单实现，具体功能由exchange包处理
+		trader = NewFuturesTrader("", "", false) // 占位符，实际不使用
+	case "okx_spot", "okx_futures":
+		log.Printf("🏦 [%s] 使用OKX交易 (%s)", config.Name, config.Exchange)
+		// OKX使用简单实现，具体功能由exchange包处理
+		trader = NewFuturesTrader("", "", false) // 占位符，实际不使用
 	case "hyperliquid":
 		log.Printf("🏦 [%s] 使用Hyperliquid交易", config.Name)
 		trader, err = NewHyperliquidTrader(config.HyperliquidPrivateKey, config.HyperliquidWalletAddr, config.HyperliquidTestnet)
 		if err != nil {
 			return nil, fmt.Errorf("初始化Hyperliquid交易器失败: %w", err)
 		}
+	case "hyperliquid_spot":
+		log.Printf("🏦 [%s] 使用Hyperliquid现货交易", config.Name)
+		trader, err = NewHyperliquidTrader(config.HyperliquidPrivateKey, config.HyperliquidWalletAddr, config.HyperliquidTestnet)
+		if err != nil {
+			return nil, fmt.Errorf("初始化Hyperliquid交易器失败: %w", err)
+		}
 	case "aster":
 		log.Printf("🏦 [%s] 使用Aster交易", config.Name)
+		trader, err = NewAsterTrader(config.AsterUser, config.AsterSigner, config.AsterPrivateKey)
+		if err != nil {
+			return nil, fmt.Errorf("初始化Aster交易器失败: %w", err)
+		}
+	case "aster_spot":
+		log.Printf("🏦 [%s] 使用Aster现货交易", config.Name)
 		trader, err = NewAsterTrader(config.AsterUser, config.AsterSigner, config.AsterPrivateKey)
 		if err != nil {
 			return nil, fmt.Errorf("初始化Aster交易器失败: %w", err)
@@ -186,6 +218,72 @@ func NewAutoTrader(config AutoTraderConfig) (*AutoTrader, error) {
 	// 验证初始金额配置
 	if config.InitialBalance <= 0 {
 		return nil, fmt.Errorf("初始金额必须大于0，请在配置中设置InitialBalance")
+	}
+
+	// 初始化exchangeClient（用于现货交易等）
+	var exchangeClient exchange.Exchange
+	exchangeConfig := make(map[string]interface{})
+
+	switch config.Exchange {
+	case "binance_spot":
+		exchangeConfig["binance_api_key"] = config.BinanceAPIKey
+		exchangeConfig["binance_secret_key"] = config.BinanceSecretKey
+		exchangeClient, err = exchange.NewExchange(exchange.ExchangeBinanceSpot, exchangeConfig)
+		if err != nil {
+			log.Printf("⚠️ 初始化Binance现货exchangeClient失败: %v", err)
+		}
+	case "gateio_spot":
+		if config.ExchangeConfig != nil {
+			exchangeConfig = config.ExchangeConfig
+			exchangeClient, err = exchange.NewExchange(exchange.ExchangeGateioSpot, exchangeConfig)
+			if err != nil {
+				log.Printf("⚠️ 初始化Gate.io现货exchangeClient失败: %v", err)
+			}
+		} else {
+			log.Printf("⚠️ Gate.io配置不存在，跳过exchangeClient初始化")
+		}
+	case "gateio_futures":
+		if config.ExchangeConfig != nil {
+			exchangeConfig = config.ExchangeConfig
+			exchangeClient, err = exchange.NewExchange(exchange.ExchangeGateioFutures, exchangeConfig)
+			if err != nil {
+				log.Printf("⚠️ 初始化Gate.io合约exchangeClient失败: %v", err)
+			}
+		} else {
+			log.Printf("⚠️ Gate.io配置不存在，跳过exchangeClient初始化")
+		}
+	case "okx_spot":
+		if config.ExchangeConfig != nil {
+			exchangeConfig = config.ExchangeConfig
+			exchangeClient, err = exchange.NewExchange(exchange.ExchangeOKXSpot, exchangeConfig)
+			if err != nil {
+				log.Printf("⚠️ 初始化OKX现货exchangeClient失败: %v", err)
+			}
+		} else {
+			log.Printf("⚠️ OKX配置不存在，跳过exchangeClient初始化")
+		}
+	case "okx_futures":
+		if config.ExchangeConfig != nil {
+			exchangeConfig = config.ExchangeConfig
+			exchangeClient, err = exchange.NewExchange(exchange.ExchangeOKXFutures, exchangeConfig)
+			if err != nil {
+				log.Printf("⚠️ 初始化OKX合约exchangeClient失败: %v", err)
+			}
+		} else {
+			log.Printf("⚠️ OKX配置不存在，跳过exchangeClient初始化")
+		}
+	case "hyperliquid_spot":
+		exchangeClient, err = exchange.NewExchange(exchange.ExchangeHyperliquidSpot, exchangeConfig)
+		if err != nil {
+			log.Printf("⚠️ 初始化Hyperliquid现货exchangeClient失败: %v", err)
+		}
+	case "aster_spot":
+		exchangeConfig["aster_api_key"] = config.AsterPrivateKey
+		exchangeConfig["aster_secret_key"] = config.AsterSigner
+		exchangeClient, err = exchange.NewExchange(exchange.ExchangeAsterSpot, exchangeConfig)
+		if err != nil {
+			log.Printf("⚠️ 初始化Aster现货exchangeClient失败: %v", err)
+		}
 	}
 
 	// 初始化决策日志记录器（使用trader ID创建独立目录）
@@ -216,6 +314,7 @@ func NewAutoTrader(config AutoTraderConfig) (*AutoTrader, error) {
 		callCount:             0,
 		isRunning:             false,
 		positionFirstSeenTime: make(map[string]int64),
+		exchangeClient:        exchangeClient, // 设置exchangeClient
 	}, nil
 }
 
@@ -225,6 +324,71 @@ func (at *AutoTrader) Run() error {
 	log.Println("🚀 AI驱动自动交易系统启动")
 	log.Printf("💰 初始余额: %.2f USDT", at.initialBalance)
 	log.Printf("⚙️  扫描间隔: %v", at.config.ScanInterval)
+
+	// 策略执行架构：双轨并行模式
+	// - 合约交易：仅支持AI策略（HODL有爆仓风险）
+	// - 现货交易：支持 HODL后台监控 + AI主动交易 双轨并行
+	isFutures := !strings.Contains(strings.ToLower(at.config.Exchange), "_spot")
+
+	// 合约强制AI策略
+	if isFutures && at.config.Strategy == "hodl_band_profit" {
+		log.Printf("⚠️ 合约交易员不支持HODL策略（有爆仓风险），自动切换为AI策略")
+		at.config.Strategy = "ai"
+	}
+
+	// 现货支持HODL后台监控（与AI并行）
+	if !isFutures && at.config.Strategy == "hodl_band_profit" {
+		log.Println("📊 启动双轨模式：HODL后台监控 + AI主动交易")
+
+		// 初始化交易所客户端（用于HODL和AI共享）
+		if at.exchangeClient == nil {
+			var err error
+			exchangeConfig := make(map[string]interface{})
+
+			switch at.config.Exchange {
+			case "binance_spot":
+				exchangeConfig["binance_api_key"] = at.config.BinanceAPIKey
+				exchangeConfig["binance_secret_key"] = at.config.BinanceSecretKey
+				at.exchangeClient, err = exchange.NewExchange(exchange.ExchangeBinanceSpot, exchangeConfig)
+			case "gateio_spot":
+				if at.config.ExchangeConfig != nil {
+					if apiKey, ok := at.config.ExchangeConfig["gateio_api_key"].(string); ok {
+						exchangeConfig["gateio_api_key"] = apiKey
+					}
+					if secretKey, ok := at.config.ExchangeConfig["gateio_secret_key"].(string); ok {
+						exchangeConfig["gateio_secret_key"] = secretKey
+					}
+					if passphrase, ok := at.config.ExchangeConfig["gateio_passphrase"].(string); ok {
+						exchangeConfig["gateio_passphrase"] = passphrase
+					}
+					if testnet, ok := at.config.ExchangeConfig["gateio_testnet"].(bool); ok {
+						exchangeConfig["gateio_testnet"] = testnet
+					}
+					exchangeConfig["gateio_settle"] = "usdt"
+					at.exchangeClient, err = exchange.NewExchange(exchange.ExchangeGateioSpot, exchangeConfig)
+				} else {
+					return fmt.Errorf("Gate.io配置不存在")
+				}
+			case "hyperliquid_spot":
+				at.exchangeClient, err = exchange.NewExchange(exchange.ExchangeHyperliquidSpot, exchangeConfig)
+			case "aster_spot":
+				exchangeConfig["binance_api_key"] = at.config.BinanceAPIKey
+				exchangeConfig["binance_secret_key"] = at.config.BinanceSecretKey
+				at.exchangeClient, err = exchange.NewExchange(exchange.ExchangeAsterSpot, exchangeConfig)
+			default:
+				return fmt.Errorf("不支持的现货交易所: %s", at.config.Exchange)
+			}
+
+			if err != nil {
+				return fmt.Errorf("初始化交易所客户端失败: %w", err)
+			}
+		}
+
+		// 启动HODL后台监控协程
+		go at.runHODLMonitor()
+		log.Println("✅ HODL后台监控已启动（1小时检查一次）")
+	}
+
 	log.Println("🤖 AI将全权决定杠杆、仓位大小、止损止盈等参数")
 
 	ticker := time.NewTicker(at.config.ScanInterval)
@@ -251,6 +415,39 @@ func (at *AutoTrader) Run() error {
 func (at *AutoTrader) Stop() {
 	at.isRunning = false
 	log.Println("⏹ 自动交易系统停止")
+}
+
+// runHODLMonitor HODL后台监控协程（仅现货交易）
+func (at *AutoTrader) runHODLMonitor() {
+	log.Println("🔍 HODL监控协程启动...")
+
+	if at.config.HODLBandProfitConfig == nil {
+		log.Println("⚠️ HODL配置为空，监控协程退出")
+		return
+	}
+
+	hodl := strategy.NewHODLBandProfitStrategy(at.config.HODLBandProfitConfig, at.exchangeClient)
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
+
+	// 首次立即执行
+	if err := hodl.Execute(); err != nil {
+		log.Printf("❌ HODL初始检查失败: %v", err)
+	}
+
+	for at.isRunning {
+		select {
+		case <-ticker.C:
+			log.Println("🕒 HODL定时检查...")
+			if err := hodl.Execute(); err != nil {
+				log.Printf("❌ HODL执行失败: %v", err)
+			} else {
+				log.Println("✅ HODL检查完成")
+			}
+		}
+	}
+
+	log.Println("🚫 HODL监控协程已停止")
 }
 
 // runCycle 运行一个交易周期（使用AI全权决策）
@@ -436,6 +633,181 @@ func (at *AutoTrader) runCycle() error {
 
 // buildTradingContext 构建交易上下文
 func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
+	// 如果存在统一的交易所客户端（如Gate.io/OKX现货/合约），优先使用它构建上下文
+	if at.exchangeClient != nil {
+		// 1. 获取账户信息（统一Exchange接口）
+		balanceMap, err := at.exchangeClient.GetBalance()
+		if err != nil {
+			return nil, fmt.Errorf("获取账户余额失败: %w", err)
+		}
+
+		// 计算钱包余额、可用余额与未实现盈亏
+		totalWalletBalance := 0.0
+		availableBalance := 0.0
+		totalUnrealizedProfit := 0.0
+
+		// 优先检查带后缀的合约字段（total/unrealized_pnl）
+		if total, ok := balanceMap["usdt_total"]; ok {
+			totalWalletBalance = total
+		} else if total, ok := balanceMap["USDT_total"]; ok {
+			totalWalletBalance = total
+		} else if usdt, ok := balanceMap["USDT"]; ok {
+			// 现货通常以USDT计价
+			totalWalletBalance = usdt
+		} else if usdt2, ok := balanceMap["usdt"]; ok {
+			// 兼容小写结算币种（仅available的情况）
+			totalWalletBalance = usdt2
+		} else {
+			// 如果没有USDT键，累加所有非后缀余额作为总余额
+			for k, v := range balanceMap {
+				if !strings.HasSuffix(k, "_total") && !strings.HasSuffix(k, "_unrealized_pnl") {
+					totalWalletBalance += v
+				}
+			}
+		}
+
+		// 获取可用余额
+		if avail, ok := balanceMap["USDT"]; ok {
+			availableBalance = avail
+		} else if avail, ok := balanceMap["usdt"]; ok {
+			availableBalance = avail
+		} else {
+			availableBalance = totalWalletBalance
+		}
+
+		// 获取未实现盈亏（合约特有）
+		if unrealized, ok := balanceMap["usdt_unrealized_pnl"]; ok {
+			totalUnrealizedProfit = unrealized
+		} else if unrealized, ok := balanceMap["USDT_unrealized_pnl"]; ok {
+			totalUnrealizedProfit = unrealized
+		}
+
+		// Total Equity = 钱包余额（或总余额） + 未实现盈亏
+		totalEquity := totalWalletBalance + totalUnrealizedProfit
+
+		// 兜底：若总权益为0但存在可用余额，则用可用余额计算
+		if totalEquity == 0 && availableBalance > 0 {
+			totalEquity = availableBalance + totalUnrealizedProfit
+			totalWalletBalance = availableBalance
+		}
+
+		// 2. 获取持仓（如果是现货则为空；合约有持仓）
+		positions, err := at.exchangeClient.GetOpenPositions()
+		if err != nil {
+			log.Printf("⚠️ 获取持仓失败: %v", err)
+			positions = []exchange.Position{}
+		}
+
+		var positionInfos []decision.PositionInfo
+		totalMarginUsed := 0.0
+		currentPositionKeys := make(map[string]bool)
+
+		for _, p := range positions {
+			// 市场价用于计算盈亏与保证金估算
+			marketData, _ := market.Get(p.Symbol)
+			markPrice := marketData.CurrentPrice
+
+			quantity := p.Size
+			entryPrice := p.EntryPrice
+			sideLower := strings.ToLower(p.Side)
+
+			// 计算盈亏百分比
+			pnlPct := 0.0
+			if entryPrice > 0 && markPrice > 0 {
+				if sideLower == "long" {
+					pnlPct = ((markPrice - entryPrice) / entryPrice) * 100
+				} else {
+					pnlPct = ((entryPrice - markPrice) / entryPrice) * 100
+				}
+			}
+
+			// 杠杆（若未知，使用保守默认值10进行保证金估算）
+			leverage := 10
+			marginUsed := 0.0
+			if leverage > 0 && markPrice > 0 {
+				marginUsed = (quantity * markPrice) / float64(leverage)
+				totalMarginUsed += marginUsed
+			}
+
+			// 跟踪持仓首次出现时间
+			posKey := p.Symbol + "_" + sideLower
+			currentPositionKeys[posKey] = true
+			if _, exists := at.positionFirstSeenTime[posKey]; !exists {
+				at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
+			}
+			updateTime := at.positionFirstSeenTime[posKey]
+
+			positionInfos = append(positionInfos, decision.PositionInfo{
+				Symbol:           p.Symbol,
+				Side:             sideLower,
+				EntryPrice:       entryPrice,
+				MarkPrice:        markPrice,
+				Quantity:         quantity,
+				Leverage:         leverage,
+				UnrealizedPnL:    0.0,
+				UnrealizedPnLPct: pnlPct,
+				LiquidationPrice: 0.0,
+				MarginUsed:       marginUsed,
+				UpdateTime:       updateTime,
+			})
+		}
+
+		// 清理已平仓的持仓记录
+		for key := range at.positionFirstSeenTime {
+			if !currentPositionKeys[key] {
+				delete(at.positionFirstSeenTime, key)
+			}
+		}
+
+		// 3. 获取候选币种池
+		candidateCoins, err := at.getCandidateCoins()
+		if err != nil {
+			return nil, fmt.Errorf("获取候选币种失败: %w", err)
+		}
+
+		// 4. 计算总盈亏与保证金使用率
+		totalPnL := totalEquity - at.initialBalance
+		totalPnLPct := 0.0
+		if at.initialBalance > 0 {
+			totalPnLPct = (totalPnL / at.initialBalance) * 100
+		}
+		marginUsedPct := 0.0
+		if totalEquity > 0 {
+			marginUsedPct = (totalMarginUsed / totalEquity) * 100
+		}
+
+		// 5. 历史表现分析
+		performance, err := at.decisionLogger.AnalyzePerformance(100)
+		if err != nil {
+			log.Printf("⚠️  分析历史表现失败: %v", err)
+			performance = nil
+		}
+
+		// 6. 构建上下文
+		ctx := &decision.Context{
+			CurrentTime:     time.Now().Format("2006-01-02 15:04:05"),
+			RuntimeMinutes:  int(time.Since(at.startTime).Minutes()),
+			CallCount:       at.callCount,
+			BTCETHLeverage:  at.config.BTCETHLeverage,
+			AltcoinLeverage: at.config.AltcoinLeverage,
+			Account: decision.AccountInfo{
+				TotalEquity:      totalEquity,
+				AvailableBalance: availableBalance,
+				TotalPnL:         totalPnL,
+				TotalPnLPct:      totalPnLPct,
+				MarginUsed:       totalMarginUsed,
+				MarginUsedPct:    marginUsedPct,
+				PositionCount:    len(positionInfos),
+			},
+			Positions:      positionInfos,
+			CandidateCoins: candidateCoins,
+			Performance:    performance,
+		}
+
+		return ctx, nil
+	}
+
+	// ===== 原有兼容路径：使用trader接口（主要用于币安合约） =====
 	// 1. 获取账户信息
 	balance, err := at.trader.GetBalance()
 	if err != nil {
@@ -584,6 +956,10 @@ func (at *AutoTrader) buildTradingContext() (*decision.Context, error) {
 
 // executeDecisionWithRecord 执行AI决策并记录详细信息
 func (at *AutoTrader) executeDecisionWithRecord(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	// 优先使用统一交易所客户端（用于Gate.io/OKX等），避免占位Trader导致无法执行
+	if at.exchangeClient != nil {
+		return at.executeDecisionWithExchangeClient(decision, actionRecord)
+	}
 	switch decision.Action {
 	case "open_long":
 		return at.executeOpenLongWithRecord(decision, actionRecord)
@@ -602,6 +978,157 @@ func (at *AutoTrader) executeDecisionWithRecord(decision *decision.Decision, act
 }
 
 // executeOpenLongWithRecord 执行开多仓并记录详细信息
+// executeDecisionWithExchangeClient 使用统一交易所客户端执行AI决策
+func (at *AutoTrader) executeDecisionWithExchangeClient(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	switch decision.Action {
+	case "open_long":
+		return at.execOpenLongExchange(decision, actionRecord)
+	case "open_short":
+		return at.execOpenShortExchange(decision, actionRecord)
+	case "close_long":
+		return at.execCloseLongExchange(decision, actionRecord)
+	case "close_short":
+		return at.execCloseShortExchange(decision, actionRecord)
+	case "hold", "wait":
+		return nil
+	default:
+		return fmt.Errorf("未知的action: %s", decision.Action)
+	}
+}
+
+func (at *AutoTrader) execOpenLongExchange(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	log.Printf("  📈 开多仓(统一客户端): %s", decision.Symbol)
+	marketData, err := market.Get(decision.Symbol)
+	if err != nil {
+		return err
+	}
+	if marketData.CurrentPrice <= 0 {
+		return fmt.Errorf("无法获取市场价格")
+	}
+	qty := decision.PositionSizeUSD / marketData.CurrentPrice
+	actionRecord.Quantity = qty
+	actionRecord.Price = marketData.CurrentPrice
+	// 现货BUY，合约LONG
+	side := "BUY"
+	orderType := "market"
+	if strings.Contains(at.exchange, "futures") {
+		side = "LONG"
+	}
+	order, err := at.exchangeClient.PlaceOrder(decision.Symbol, side, orderType, qty, 0)
+	if err != nil {
+		return err
+	}
+	log.Printf("  ✓ 开仓成功(统一客户端)，订单ID: %s, 数量: %.4f", order.ID, qty)
+	posKey := decision.Symbol + "_long"
+	at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
+	return nil
+}
+
+func (at *AutoTrader) execOpenShortExchange(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	log.Printf("  📉 开空仓(统一客户端): %s", decision.Symbol)
+	marketData, err := market.Get(decision.Symbol)
+	if err != nil {
+		return err
+	}
+	if marketData.CurrentPrice <= 0 {
+		return fmt.Errorf("无法获取市场价格")
+	}
+	qty := decision.PositionSizeUSD / marketData.CurrentPrice
+	actionRecord.Quantity = qty
+	actionRecord.Price = marketData.CurrentPrice
+	// 现货SELL，合约SHORT
+	side := "SELL"
+	orderType := "market"
+	if strings.Contains(at.exchange, "futures") {
+		side = "SHORT"
+	}
+	order, err := at.exchangeClient.PlaceOrder(decision.Symbol, side, orderType, qty, 0)
+	if err != nil {
+		return err
+	}
+	log.Printf("  ✓ 开仓成功(统一客户端)，订单ID: %s, 数量: %.4f", order.ID, qty)
+	posKey := decision.Symbol + "_short"
+	at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
+	return nil
+}
+
+func (at *AutoTrader) execCloseLongExchange(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	log.Printf("  🔄 平多仓(统一客户端): %s", decision.Symbol)
+	positions, err := at.exchangeClient.GetOpenPositions()
+	if err != nil {
+		return fmt.Errorf("获取持仓失败: %w", err)
+	}
+	// 找到对应多仓数量
+	qty := 0.0
+	for _, p := range positions {
+		if p.Symbol == decision.Symbol && strings.ToLower(p.Side) == "long" {
+			qty = p.Size
+			break
+		}
+	}
+	if qty <= 0 {
+		// 若未知数量，按市价全额卖出（现货）或市价做空反向（合约）
+		marketData, err := market.Get(decision.Symbol)
+		if err != nil {
+			return err
+		}
+		if marketData.CurrentPrice <= 0 {
+			return fmt.Errorf("无法获取市场价格")
+		}
+		// 兜底：用建议仓位作为参考
+		qty = decision.PositionSizeUSD / marketData.CurrentPrice
+	}
+	// 平多=卖出/做空
+	side := "SELL"
+	orderType := "market"
+	if strings.Contains(at.exchange, "futures") {
+		side = "SHORT"
+	}
+	_, err = at.exchangeClient.PlaceOrder(decision.Symbol, side, orderType, qty, 0)
+	if err != nil {
+		return err
+	}
+	log.Printf("  ✓ 平多成功(统一客户端)，数量: %.4f", qty)
+	return nil
+}
+
+func (at *AutoTrader) execCloseShortExchange(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	log.Printf("  🔄 平空仓(统一客户端): %s", decision.Symbol)
+	positions, err := at.exchangeClient.GetOpenPositions()
+	if err != nil {
+		return fmt.Errorf("获取持仓失败: %w", err)
+	}
+	qty := 0.0
+	for _, p := range positions {
+		if p.Symbol == decision.Symbol && strings.ToLower(p.Side) == "short" {
+			qty = p.Size
+			break
+		}
+	}
+	if qty <= 0 {
+		marketData, err := market.Get(decision.Symbol)
+		if err != nil {
+			return err
+		}
+		if marketData.CurrentPrice <= 0 {
+			return fmt.Errorf("无法获取市场价格")
+		}
+		qty = decision.PositionSizeUSD / marketData.CurrentPrice
+	}
+	// 平空=买入/做多
+	side := "BUY"
+	orderType := "market"
+	if strings.Contains(at.exchange, "futures") {
+		side = "LONG"
+	}
+	_, err = at.exchangeClient.PlaceOrder(decision.Symbol, side, orderType, qty, 0)
+	if err != nil {
+		return err
+	}
+	log.Printf("  ✓ 平空成功(统一客户端)，数量: %.4f", qty)
+	return nil
+}
+
 func (at *AutoTrader) executeOpenLongWithRecord(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
 	log.Printf("  📈 开多仓: %s", decision.Symbol)
 
@@ -840,8 +1367,104 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 	}
 }
 
-// GetAccountInfo 获取账户信息（用于API）
+// GetAccountInfo 获取账户信息(用于API)
 func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
+	// 优先使用exchangeClient（适用于现货等新交易所）
+	if at.exchangeClient != nil {
+		return at.getAccountInfoFromExchangeClient()
+	}
+
+	// 兼容旧的trader接口（合约交易）
+	return at.getAccountInfoFromTrader()
+}
+
+// getAccountInfoFromExchangeClient 从exchangeClient获取账户信息（现货等）
+func (at *AutoTrader) getAccountInfoFromExchangeClient() (map[string]interface{}, error) {
+	balanceMap, err := at.exchangeClient.GetBalance()
+	if err != nil {
+		return nil, fmt.Errorf("获取余额失败: %w", err)
+	}
+
+	// 解析余额字段（支持现货和合约）
+	totalWalletBalance := 0.0
+	availableBalance := 0.0
+	totalUnrealizedProfit := 0.0
+
+	// 优先检查合约字段（带_total后缀）
+	if total, ok := balanceMap["usdt_total"]; ok {
+		totalWalletBalance = total
+	} else if total, ok := balanceMap["USDT_total"]; ok {
+		totalWalletBalance = total
+	} else if usdt, ok := balanceMap["USDT"]; ok {
+		// 现货计价
+		totalWalletBalance = usdt
+	} else if usdt2, ok := balanceMap["usdt"]; ok {
+		// 兼容小写
+		totalWalletBalance = usdt2
+	} else {
+		// 累加所有非后缀余额
+		for k, v := range balanceMap {
+			if !strings.HasSuffix(k, "_total") && !strings.HasSuffix(k, "_unrealized_pnl") {
+				totalWalletBalance += v
+			}
+		}
+	}
+
+	// 获取可用余额
+	if avail, ok := balanceMap["USDT"]; ok {
+		availableBalance = avail
+	} else if avail, ok := balanceMap["usdt"]; ok {
+		availableBalance = avail
+	} else {
+		availableBalance = totalWalletBalance
+	}
+
+	// 获取未实现盈亏（合约特有）
+	if unrealized, ok := balanceMap["usdt_unrealized_pnl"]; ok {
+		totalUnrealizedProfit = unrealized
+	} else if unrealized, ok := balanceMap["USDT_unrealized_pnl"]; ok {
+		totalUnrealizedProfit = unrealized
+	}
+
+	// Total Equity = 钱包余额 + 未实现盈亏
+	totalEquity := totalWalletBalance + totalUnrealizedProfit
+
+	// 获取持仓（现货一般没有未实现盈亏）
+	positions, err := at.exchangeClient.GetOpenPositions()
+	if err != nil {
+		log.Printf("⚠️ 获取持仓失败: %v", err)
+		positions = []exchange.Position{} // 使用空持仓
+	}
+
+	totalPnL := totalEquity - at.initialBalance
+	totalPnLPct := 0.0
+	if at.initialBalance > 0 {
+		totalPnLPct = (totalPnL / at.initialBalance) * 100
+	}
+
+	return map[string]interface{}{
+		// 核心字段
+		"total_equity":      totalEquity,
+		"wallet_balance":    totalWalletBalance,
+		"unrealized_profit": totalUnrealizedProfit,
+		"available_balance": availableBalance,
+
+		// 盈亏统计
+		"total_pnl":            totalPnL,
+		"total_pnl_pct":        totalPnLPct,
+		"total_unrealized_pnl": totalUnrealizedProfit,
+		"initial_balance":      at.initialBalance,
+		"daily_pnl":            at.dailyPnL,
+
+		// 持仓信息
+		"position_count":  len(positions),
+		"margin_used":     0.0,
+		"margin_used_pct": 0.0,
+	}, nil
+}
+
+// getAccountInfoFromTrader 从trader获取账户信息（合约交易）
+func (at *AutoTrader) getAccountInfoFromTrader() (map[string]interface{}, error) {
 	balance, err := at.trader.GetBalance()
 	if err != nil {
 		return nil, fmt.Errorf("获取余额失败: %w", err)
@@ -924,6 +1547,64 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 
 // GetPositions 获取持仓列表（用于API）
 func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
+	// 优先使用统一交易所客户端（Gate.io/OKX等）
+	if at.exchangeClient != nil {
+		positions, err := at.exchangeClient.GetOpenPositions()
+		if err != nil {
+			return nil, fmt.Errorf("获取持仓失败: %w", err)
+		}
+
+		var result []map[string]interface{}
+		for _, p := range positions {
+			marketData, _ := market.Get(p.Symbol)
+			markPrice := marketData.CurrentPrice
+			if markPrice == 0 {
+				markPrice = p.EntryPrice // 回退到入场价
+			}
+
+			quantity := p.Size
+			if quantity < 0 {
+				quantity = -quantity
+			}
+
+			// 计算未实现盈亏（统一接口不返回，需要自己计算）
+			unrealizedPnl := 0.0
+			sideLower := strings.ToLower(p.Side)
+			if p.EntryPrice > 0 && markPrice > 0 {
+				if sideLower == "long" {
+					unrealizedPnl = (markPrice - p.EntryPrice) * quantity
+				} else {
+					unrealizedPnl = (p.EntryPrice - markPrice) * quantity
+				}
+			}
+
+			leverage := 10 // 默认
+			marginUsed := (quantity * markPrice) / float64(leverage)
+
+			// 计算盈亏百分比
+			pnlPct := 0.0
+			if marginUsed > 0 {
+				pnlPct = (unrealizedPnl / marginUsed) * 100
+			}
+
+			result = append(result, map[string]interface{}{
+				"symbol":             p.Symbol,
+				"side":               sideLower,
+				"entry_price":        p.EntryPrice,
+				"mark_price":         markPrice,
+				"quantity":           quantity,
+				"leverage":           leverage,
+				"unrealized_pnl":     unrealizedPnl,
+				"unrealized_pnl_pct": pnlPct,
+				"liquidation_price":  0.0, // 统一接口不返回
+				"margin_used":        marginUsed,
+			})
+		}
+
+		return result, nil
+	}
+
+	// 原有路径：使用trader接口（币安等）
 	positions, err := at.trader.GetPositions()
 	if err != nil {
 		return nil, fmt.Errorf("获取持仓失败: %w", err)

@@ -1,0 +1,31 @@
+﻿{
+  "traders": [
+    {
+      "id": "btc_band_profit",
+      "name": "BTC 波段盈利定投",
+      "exchange": "binance_spot",
+      "strategy": "hodl_band_profit",
+      "hodl_band_profit_config": {
+        "symbol": "BTCUSDT",
+        "base_amount_usdt": 100,
+        "profit_trigger_pct": 10,
+        "reinvest_ratio": 0.5,
+        "interval_hours": 24,
+        "take_profit_pct": 200,
+        "stop_loss_pct": 30
+      },
+      "binance_api_key": "YOUR_KEY",
+      "binance_secret_key": "YOUR_SECRET"
+    },
+    {
+      "id": "gateio_futures",
+      "name": "Gate.io 合约",
+      "exchange": "gateio_futures",
+      "strategy": "ai",
+      "gateio_api_key": "YOUR_KEY",
+      "gateio_secret_key": "YOUR_SECRET",
+      "gateio_passphrase": "YOUR_PASS",
+      "gateio_settle": "usdt"
+    }
+  ]
+}

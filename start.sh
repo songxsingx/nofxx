@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ═══════════════════════════════════════════════════════════════
-# NOFX AI Trading System - Docker Quick Start Script
+# NexTrade AI Trading System - Docker Quick Start Script
 # Usage: ./start.sh [command]
 # ═══════════════════════════════════════════════════════════════
 
@@ -40,44 +40,19 @@ print_error() {
 # ------------------------------------------------------------------------
 detect_compose_cmd() {
     if command -v docker compose &> /dev/null; then
-        COMPOSE_CMD="docker compose"
+        echo "docker compose"
     elif command -v docker-compose &> /dev/null; then
-        COMPOSE_CMD="docker-compose"
+        echo "docker-compose"
     else
-        print_error "Docker Compose 未安装！请先安装 Docker Compose"
+        print_error "未找到 docker compose 命令，请确保已安装 Docker"
         exit 1
     fi
-    print_info "使用 Docker Compose 命令: $COMPOSE_CMD"
 }
 
-# ------------------------------------------------------------------------
-# Validation: Docker Installation
-# ------------------------------------------------------------------------
-check_docker() {
-    if ! command -v docker &> /dev/null; then
-        print_error "Docker 未安装！请先安装 Docker: https://docs.docker.com/get-docker/"
-        exit 1
-    fi
-
-    detect_compose_cmd
-    print_success "Docker 和 Docker Compose 已安装"
-}
+COMPOSE_CMD=$(detect_compose_cmd)
 
 # ------------------------------------------------------------------------
-# Validation: Environment File (.env)
-# ------------------------------------------------------------------------
-check_env() {
-    if [ ! -f ".env" ]; then
-        print_warning ".env 不存在，从模板复制..."
-        cp .env.example .env
-        print_info "✓ 已使用默认环境变量创建 .env"
-        print_info "💡 如需修改端口等设置，可编辑 .env 文件"
-    fi
-    print_success "环境变量文件存在"
-}
-
-# ------------------------------------------------------------------------
-# Validation: Configuration File (config.json) - BASIC SETTINGS ONLY
+# Validation: Config File
 # ------------------------------------------------------------------------
 check_config() {
     if [ ! -f "config.json" ]; then
@@ -96,20 +71,20 @@ check_config() {
 read_env_vars() {
     if [ -f ".env" ]; then
         # 读取端口配置，设置默认值
-        NOFX_FRONTEND_PORT=$(grep "^NOFX_FRONTEND_PORT=" .env 2>/dev/null | cut -d'=' -f2 || echo "3000")
-        NOFX_BACKEND_PORT=$(grep "^NOFX_BACKEND_PORT=" .env 2>/dev/null | cut -d'=' -f2 || echo "8080")
+        NEXTRADE_FRONTEND_PORT=$(grep "^NEXTRADE_FRONTEND_PORT=" .env 2>/dev/null | cut -d'=' -f2 || echo "3000")
+        NEXTRADE_BACKEND_PORT=$(grep "^NEXTRADE_BACKEND_PORT=" .env 2>/dev/null | cut -d'=' -f2 || echo "8080")
         
         # 去除可能的引号和空格
-        NOFX_FRONTEND_PORT=$(echo "$NOFX_FRONTEND_PORT" | tr -d '"'"'" | tr -d ' ')
-        NOFX_BACKEND_PORT=$(echo "$NOFX_BACKEND_PORT" | tr -d '"'"'" | tr -d ' ')
+        NEXTRADE_FRONTEND_PORT=$(echo "$NEXTRADE_FRONTEND_PORT" | tr -d '"'"'" | tr -d ' ')
+        NEXTRADE_BACKEND_PORT=$(echo "$NEXTRADE_BACKEND_PORT" | tr -d '"'"'" | tr -d ' ')
         
         # 如果为空则使用默认值
-        NOFX_FRONTEND_PORT=${NOFX_FRONTEND_PORT:-3000}
-        NOFX_BACKEND_PORT=${NOFX_BACKEND_PORT:-8080}
+        NEXTRADE_FRONTEND_PORT=${NEXTRADE_FRONTEND_PORT:-3000}
+        NEXTRADE_BACKEND_PORT=${NEXTRADE_BACKEND_PORT:-8080}
     else
         # 如果.env不存在，使用默认端口
-        NOFX_FRONTEND_PORT=3000
-        NOFX_BACKEND_PORT=8080
+        NEXTRADE_FRONTEND_PORT=3000
+        NEXTRADE_BACKEND_PORT=8080
     fi
 }
 
@@ -160,7 +135,7 @@ check_database() {
 # Service Management: Start
 # ------------------------------------------------------------------------
 start() {
-    print_info "正在启动 NOFX AI Trading System..."
+    print_info "正在启动 NexTrade AI Trading System..."
 
     # 读取环境变量
     read_env_vars
@@ -180,8 +155,8 @@ start() {
     fi
 
     print_success "服务已启动！"
-    print_info "Web 界面: http://localhost:${NOFX_FRONTEND_PORT}"
-    print_info "API 端点: http://localhost:${NOFX_BACKEND_PORT}"
+    print_info "Web 界面: http://localhost:${NEXTRADE_FRONTEND_PORT}"
+    print_info "API 端点: http://localhost:${NEXTRADE_BACKEND_PORT}"
     print_info ""
     print_info "查看日志: ./start.sh logs"
     print_info "停止服务: ./start.sh stop"
@@ -227,7 +202,7 @@ status() {
     $COMPOSE_CMD ps
     echo ""
     print_info "健康检查:"
-    curl -s "http://localhost:${NOFX_BACKEND_PORT}/api/health" | jq '.' || echo "后端未响应"
+    curl -s "http://localhost:${NEXTRADE_BACKEND_PORT}/api/health" | jq '.' || echo "后端未响应"
 }
 
 # ------------------------------------------------------------------------
@@ -259,7 +234,7 @@ update() {
 # Help: Usage Information
 # ------------------------------------------------------------------------
 show_help() {
-    echo "NOFX AI Trading System - Docker 管理脚本"
+    echo "NexTrade AI Trading System - Docker 管理脚本"
     echo ""
     echo "用法: ./start.sh [command] [options]"
     echo ""
@@ -283,13 +258,13 @@ show_help() {
 # Main: Command Dispatcher
 # ------------------------------------------------------------------------
 main() {
-    check_docker
+    # Pre-flight checks
+    check_config
+    check_database
 
-    case "${1:-start}" in
+    # Command dispatcher
+    case "$1" in
         start)
-            check_env
-            check_config
-            check_database
             start "$2"
             ;;
         stop)
@@ -299,7 +274,7 @@ main() {
             restart
             ;;
         logs)
-            logs "$@"
+            logs "$1" "$2"
             ;;
         status)
             status
@@ -310,7 +285,7 @@ main() {
         update)
             update
             ;;
-        help|--help|-h)
+        help|"")
             show_help
             ;;
         *)
@@ -321,5 +296,5 @@ main() {
     esac
 }
 
-# Execute Main
+# Run main function with all arguments
 main "$@"

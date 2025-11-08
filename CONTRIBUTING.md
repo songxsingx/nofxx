@@ -1,318 +1,114 @@
-# 🤝 Contributing to NOFX
+# 🤝 Contributing to NexTrade
 
-**Language:** [English](CONTRIBUTING.md) | [中文](docs/i18n/zh-CN/CONTRIBUTING.md)
+Thank you for your interest in contributing to NexTrade! This document provides guidelines and workflows for contributing to the project.
 
-Thank you for your interest in contributing to NOFX! This document provides guidelines and workflows for contributing to the project.
-
----
-
-## 📑 Table of Contents
+## 📋 Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
-- [How Can I Contribute?](#how-can-i-contribute)
+- [Getting Started](#getting-started)
 - [Development Workflow](#development-workflow)
-- [PR Submission Guidelines](#pr-submission-guidelines)
+- [Pull Request Process](#pull-request-process)
 - [Coding Standards](#coding-standards)
-- [Commit Message Guidelines](#commit-message-guidelines)
-- [Review Process](#review-process)
-- [Bounty Program](#bounty-program)
+- [Testing](#testing)
+- [Documentation](#documentation)
+- [Community](#community)
 
----
+## 🤝 Code of Conduct
 
-## 📜 Code of Conduct
+This project and everyone participating in it is governed by our Code of Conduct. By participating, you are expected to uphold this code.
 
-This project adheres to the [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
+## 🚀 Getting Started
 
----
+### Prerequisites
 
-## 🎯 How Can I Contribute?
+- Go 1.21+
+- Node.js 18+
+- npm 9+
+- TA-Lib (for technical analysis indicators)
 
-### 1. Report Bugs 🐛
-
-- Use the [Bug Report Template](.github/ISSUE_TEMPLATE/bug_report.md)
-- Check if the bug has already been reported
-- Include detailed reproduction steps
-- Provide environment information (OS, Go version, etc.)
-
-### 2. Suggest Features ✨
-
-- Use the [Feature Request Template](.github/ISSUE_TEMPLATE/feature_request.md)
-- Explain the use case and benefits
-- Check if it aligns with the [project roadmap](docs/roadmap/README.md)
-
-### 3. Submit Pull Requests 🔧
-
-Before submitting a PR, please check the following:
-
-#### ✅ **Accepted Contributions**
-
-**High Priority** (aligned with roadmap):
-- 🔒 Security enhancements (encryption, authentication, RBAC)
-- 🧠 AI model integrations (GPT-4, Claude, Gemini Pro)
-- 🔗 Exchange integrations (OKX, Bybit, Lighter, EdgeX)
-- 📊 Trading data APIs (AI500, OI analysis, NetFlow)
-- 🎨 UI/UX improvements (mobile responsiveness, charts)
-- ⚡ Performance optimizations
-- 🐛 Bug fixes
-- 📝 Documentation improvements
-
-**Medium Priority:**
-- ✅ Test coverage improvements
-- 🌐 Internationalization (new language support)
-- 🔧 Build/deployment tooling
-- 📈 Monitoring and logging enhancements
-
-#### ❌ **Not Accepted** (without prior discussion)
-
-- Major architectural changes without RFC (Request for Comments)
-- Features not aligned with project roadmap
-- Breaking changes without migration path
-- Code that introduces new dependencies without justification
-- Experimental features without opt-in flag
-
-**⚠️ Important:** For major features, please open an issue for discussion **before** starting work.
-
----
-
-## 🛠️ Development Workflow
-
-### 1. Fork and Clone
+### Installation
 
 ```bash
-# Fork the repository on GitHub
-# Then clone your fork
-git clone https://github.com/YOUR_USERNAME/nofx.git
-cd nofx
+# Clone the repository
+git clone https://github.com/tinkle-community/nextrade.git
+cd nextrade
 
-# Add upstream remote
-git remote add upstream https://github.com/tinkle-community/nofx.git
-```
+# Backend setup
+go mod tidy
 
-### 2. Create a Feature Branch
-
-```bash
-# Update your local dev branch
-git checkout dev
-git pull upstream dev
-
-# Create a new branch
-git checkout -b feature/your-feature-name
-# or
-git checkout -b fix/your-bug-fix
-```
-
-**Branch Naming Convention:**
-- `feature/` - New features
-- `fix/` - Bug fixes
-- `docs/` - Documentation updates
-- `refactor/` - Code refactoring
-- `perf/` - Performance improvements
-- `test/` - Test updates
-- `chore/` - Build/config changes
-
-### 3. Set Up Development Environment
-
-```bash
-# Install Go dependencies
-go mod download
-
-# Install frontend dependencies
+# Frontend setup
 cd web
 npm install
-cd ..
-
-# Install TA-Lib (required)
-# macOS:
-brew install ta-lib
-
-# Ubuntu/Debian:
-sudo apt-get install libta-lib0-dev
 ```
 
-### 4. Make Your Changes
-
-- Follow the [coding standards](#coding-standards)
-- Write tests for new features
-- Update documentation as needed
-- Keep commits focused and atomic
-
-### 5. Test Your Changes
+### Running Development Servers
 
 ```bash
-# Run backend tests
-go test ./...
+# Start backend (from project root)
+go run main.go
 
-# Build backend
-go build -o nofx
-
-# Run frontend in dev mode
+# Start frontend (from web directory)
 cd web
 npm run dev
-
-# Build frontend
-npm run build
 ```
 
-### 6. Commit Your Changes
+## 🔧 Development Workflow
 
-Follow the [commit message guidelines](#commit-message-guidelines):
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make your changes
+4. Commit your changes (`git commit -m 'Add some amazing feature'`)
+5. Push to the branch (`git push origin feature/amazing-feature`)
+6. Open a Pull Request
 
-```bash
-git add .
-git commit -m "feat: add support for OKX exchange integration"
-```
-
-### 7. Push and Create PR
-
-```bash
-# Push to your fork
-git push origin feature/your-feature-name
-
-# Go to GitHub and create a Pull Request
-# Use the PR template and fill in all sections
-```
-
----
-
-## 📝 PR Submission Guidelines
+## 📥 Pull Request Process
 
 ### Before Submitting
 
-- [ ] Code compiles successfully (`go build` and `npm run build`)
-- [ ] All tests pass (`go test ./...`)
-- [ ] No linting errors (`go fmt`, `go vet`)
-- [ ] Documentation is updated
-- [ ] Commits follow conventional commits format
-- [ ] Branch is rebased on latest `dev`
+1. Ensure any install or build dependencies are removed before the end of the layer when doing a build
+2. Update the README.md with details of changes to the interface, this includes new environment variables, exposed ports, useful file locations and container parameters
+3. Increase the version numbers in any examples files and the README.md to the new version that this Pull Request would represent
+4. You may merge the Pull Request in once you have the sign-off of two other developers, or if you do not have permission to do that, you may request the second reviewer to merge it for you
 
-### PR Title Format
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) format:
+### PR Template
 
 ```
-<type>(<scope>): <subject>
+## Description
 
-Examples:
-feat(exchange): add OKX exchange integration
-fix(trader): resolve position tracking bug
-docs(readme): update installation instructions
-perf(ai): optimize prompt generation
-refactor(core): extract common exchange interface
+Please include a summary of the change and which issue is fixed. Please also include relevant motivation and context.
+
+Fixes # (issue)
+
+## Type of Change
+
+Please delete options that are not relevant.
+
+- [ ] Bug fix (non-breaking change which fixes an issue)
+- [ ] New feature (non-breaking change which adds functionality)
+- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
+- [ ] This change requires a documentation update
+
+## How Has This Been Tested?
+
+Please describe the tests that you ran to verify your changes. Provide instructions so we can reproduce.
+
+## Checklist:
+
+- [ ] My code follows the style guidelines of this project
+- [ ] I have performed a self-review of my own code
+- [ ] I have commented my code, particularly in hard-to-understand areas
+- [ ] I have made corresponding changes to the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix is effective or that my feature works
+- [ ] New and existing unit tests pass locally with my changes
+- [ ] Any dependent changes have been merged and published in downstream modules
 ```
-
-**Types:**
-- `feat` - New feature
-- `fix` - Bug fix
-- `docs` - Documentation
-- `style` - Code style (formatting, no logic change)
-- `refactor` - Code refactoring
-- `perf` - Performance improvement
-- `test` - Test updates
-- `chore` - Build/config changes
-- `ci` - CI/CD changes
-- `security` - Security improvements
-
-### PR Description
-
-Use the [PR template](.github/PULL_REQUEST_TEMPLATE.md) and ensure:
-
-1. **Clear description** of what and why
-2. **Type of change** is marked
-3. **Related issues** are linked
-4. **Testing steps** are documented
-5. **Screenshots** for UI changes
-6. **All checkboxes** are completed
-
-### PR Size
-
-Keep PRs focused and reasonably sized:
-
-- ✅ **Small PR** (< 300 lines): Ideal, fast review
-- ⚠️ **Medium PR** (300-1000 lines): Acceptable, may take longer
-- ❌ **Large PR** (> 1000 lines): Please break into smaller PRs
-
----
 
 ## 💻 Coding Standards
 
-### Go Code
+### Go Backend
 
-```go
-// ✅ Good: Clear naming, proper error handling
-func ConnectToExchange(apiKey, secret string) (*Exchange, error) {
-    if apiKey == "" || secret == "" {
-        return nil, fmt.Errorf("API credentials are required")
-    }
-
-    client, err := createClient(apiKey, secret)
-    if err != nil {
-        return nil, fmt.Errorf("failed to create client: %w", err)
-    }
-
-    return &Exchange{client: client}, nil
-}
-
-// ❌ Bad: Poor naming, no error handling
-func ce(a, s string) *Exchange {
-    c := createClient(a, s)
-    return &Exchange{client: c}
-}
-```
-
-**Best Practices:**
-- Use meaningful variable names
-- Handle all errors explicitly
-- Add comments for complex logic
-- Follow Go idioms and conventions
-- Run `go fmt` before committing
-- Use `go vet` and `golangci-lint`
-
-### TypeScript/React Code
-
-```typescript
-// ✅ Good: Type-safe, clear naming
-interface TraderConfig {
-  id: string;
-  exchange: 'binance' | 'hyperliquid' | 'aster';
-  aiModel: string;
-  enabled: boolean;
-}
-
-const TraderCard: React.FC<{ trader: TraderConfig }> = ({ trader }) => {
-  const [isRunning, setIsRunning] = useState(false);
-
-  const handleStart = async () => {
-    try {
-      await startTrader(trader.id);
-      setIsRunning(true);
-    } catch (error) {
-      console.error('Failed to start trader:', error);
-    }
-  };
-
-  return <div>...</div>;
-};
-
-// ❌ Bad: No types, unclear naming
-const TC = (props) => {
-  const [r, setR] = useState(false);
-  const h = () => { startTrader(props.t.id); setR(true); };
-  return <div>...</div>;
-};
-```
-
-**Best Practices:**
-- Use TypeScript strict mode
-- Define interfaces for all data structures
-- Avoid `any` type
-- Use functional components with hooks
-- Follow React best practices
-- Run `npm run lint` before committing
-
-### File Structure
-
-```
-NOFX/
+NexTrade/
 ├── cmd/               # Main applications
 ├── internal/          # Private code
 │   ├── exchange/      # Exchange adapters
@@ -328,7 +124,6 @@ NOFX/
 │   │   └── utils/
 │   └── public/
 └── docs/             # Documentation
-```
 
 ---
 
@@ -370,112 +165,76 @@ docs: update Docker deployment guide
 
 - Add troubleshooting section
 - Update environment variables
-- Add examples for common scenarios
 ```
 
-### Rules
+### Types
 
-- Use present tense ("add" not "added")
-- Use imperative mood ("move" not "moves")
-- First line ≤ 72 characters
-- Reference issues and PRs
-- Explain "what" and "why", not "how"
+- **feat**: A new feature
+- **fix**: A bug fix
+- **docs**: Documentation only changes
+- **style**: Changes that do not affect the meaning of the code (white-space, formatting, missing semi-colons, etc)
+- **refactor**: A code change that neither fixes a bug nor adds a feature
+- **perf**: A code change that improves performance
+- **test**: Adding missing tests or correcting existing tests
+- **build**: Changes that affect the build system or external dependencies
+- **ci**: Changes to our CI configuration files and scripts
+- **chore**: Other changes that don't modify src or test files
+- **revert**: Reverts a previous commit
 
----
+## 🧪 Testing
 
-## 🔍 Review Process
+### Go Backend Testing
 
-### Timeline
+```bash
+# Run all tests
+go test ./...
 
-- **Initial review:** Within 2-3 business days
-- **Follow-up reviews:** Within 1-2 business days
-- **Bounty PRs:** Priority review within 1 business day
+# Run tests with coverage
+go test -cover ./...
 
-### Review Criteria
+# Run tests with verbose output
+go test -v ./...
+```
 
-Reviewers will check:
+### Frontend Testing
 
-1. **Functionality**
-   - Does it work as intended?
-   - Are edge cases handled?
-   - No regression in existing features?
+```bash
+# Run frontend tests
+cd web
+npm test
 
-2. **Code Quality**
-   - Follows coding standards?
-   - Well-structured and readable?
-   - Proper error handling?
+# Run tests with coverage
+npm test -- --coverage
+```
 
-3. **Testing**
-   - Adequate test coverage?
-   - Tests pass in CI?
-   - Manual testing documented?
+**Best Practices:**
+- Use TypeScript strict mode
+- Define interfaces for all data structures
+- Avoid `any` type
+- Use functional components with hooks
+- Follow React best practices
+- Run `npm run lint` before committing
 
-4. **Documentation**
-   - Code comments where needed?
-   - README/docs updated?
-   - API changes documented?
+## 📚 Documentation
 
-5. **Security**
-   - No hardcoded secrets?
-   - Input validation?
-   - No known vulnerabilities?
+- Keep documentation up to date with code changes
+- Use clear, concise language
+- Include examples where appropriate
+- Follow the existing documentation style
 
-### Response to Feedback
+## 👥 Community
 
-- Address all review comments
-- Ask questions if unclear
-- Mark conversations as resolved
-- Re-request review after changes
+### Communication
 
-### Approval and Merge
+- **GitHub Issues**: For bug reports and feature requests
+- **Pull Requests**: For code contributions
+- **Telegram**: [NexTrade Developer Community](https://t.me/nofx_dev_community)
 
-- Requires **1 approval** from maintainers
-- All CI checks must pass
-- No unresolved conversations
-- Maintainers will merge (squash merge for small PRs, merge commit for features)
+### Getting Help
 
----
+If you need help, please:
+1. Check existing issues and documentation
+2. Ask in the [Telegram community](https://t.me/nofx_dev_community)
+3. Create a new issue if needed
 
-## 💰 Bounty Program
-
-### How It Works
-
-1. Check [open bounty issues](https://github.com/tinkle-community/nofx/labels/bounty)
-2. Comment to claim (first come, first served)
-3. Complete work within deadline
-4. Submit PR with bounty claim section filled
-5. Get paid upon merge
-
-### Guidelines
-
-- Read [Bounty Guide](docs/community/bounty-guide.md)
-- Meet all acceptance criteria
-- Include demo video/screenshots
-- Follow all contribution guidelines
-- Payment details discussed privately
-
----
-
-## ❓ Questions?
-
-- **General questions:** Join our [Telegram Community](https://t.me/nofx_dev_community)
-- **Technical questions:** Open a [Discussion](https://github.com/tinkle-community/nofx/discussions)
-- **Security issues:** See [Security Policy](SECURITY.md)
-- **Bug reports:** Use [Bug Report Template](.github/ISSUE_TEMPLATE/bug_report.md)
-
----
-
-## 📚 Additional Resources
-
-- [Project Roadmap](docs/roadmap/README.md)
-- [Architecture Documentation](docs/architecture/README.md)
-- [API Documentation](docs/api/README.md)
-- [Deployment Guide](docs/getting-started/docker-deploy.en.md)
-
----
-
-## 🙏 Thank You!
-
-Your contributions make NOFX better for everyone. We appreciate your time and effort!
-
-**Happy coding! 🚀**
+Your contributions make NexTrade better for everyone. We appreciate your time and effort!

@@ -11,7 +11,8 @@ export function useSystemConfig() {
     getSystemConfig()
       .then((data) => {
         if (!mounted) return;
-        setConfig(data);
+        // 始终强制设置 admin_mode 为 true
+        setConfig({ ...data, admin_mode: true });
         setLoading(false);
       })
       .catch((err: Error) => {

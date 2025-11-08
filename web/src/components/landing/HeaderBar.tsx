@@ -4,19 +4,18 @@ import { Menu, X, ChevronDown } from 'lucide-react'
 import { t, type Language } from '../../i18n/translations'
 
 interface HeaderBarProps {
-  onLoginClick?: () => void
   isLoggedIn?: boolean
   isHomePage?: boolean
   currentPage?: string
   language?: Language
   onLanguageChange?: (lang: Language) => void
-  user?: { email: string } | null
-  onLogout?: () => void
-  isAdminMode?: boolean
+  user?: { id: string; email: string } | null
   onPageChange?: (page: string) => void
+  tradingMode?: 'spot' | 'futures' | ''
+  onTradingModeChange?: (mode: 'spot' | 'futures') => void
 }
 
-export default function HeaderBar({ isLoggedIn = false, isHomePage = false, currentPage, language = 'zh' as Language, onLanguageChange, user, onLogout, isAdminMode = false, onPageChange }: HeaderBarProps) {
+export default function HeaderBar({ isLoggedIn = false, isHomePage = false, currentPage, language = 'zh' as Language, onLanguageChange, user, onPageChange, tradingMode = '', onTradingModeChange }: HeaderBarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [languageDropdownOpen, setLanguageDropdownOpen] = useState(false)
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
@@ -58,156 +57,117 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
           <div className='hidden md:flex items-center justify-between flex-1 ml-8'>
             {/* Left Side - Navigation Tabs */}
             <div className='flex items-center gap-4'>
-              {isLoggedIn ? (
-                // Main app navigation when logged in
-                <>
-                  <button
-                    onClick={() => {
-                      console.log('实时 button clicked, onPageChange:', onPageChange);
-                      onPageChange?.('competition');
-                    }}
-                    className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
+              {/* Main app navigation - always shown in admin mode */}
+              <button
+                onClick={() => {
+                  console.log('实时 button clicked, onPageChange:', onPageChange);
+                  onPageChange?.('competition');
+                }}
+                className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
+                style={{
+                  color: currentPage === 'competition' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  position: 'relative'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== 'competition') {
+                    e.currentTarget.style.color = 'var(--brand-yellow)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== 'competition') {
+                    e.currentTarget.style.color = 'var(--brand-light-gray)';
+                  }
+                }}
+              >
+                {/* Background for selected state */}
+                {currentPage === 'competition' && (
+                  <span 
+                    className="absolute inset-0 rounded-lg"
                     style={{
-                      color: currentPage === 'competition' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
-                      padding: '8px 16px',
-                      borderRadius: '8px',
-                      position: 'relative'
+                      background: 'rgba(240, 185, 11, 0.15)',
+                      zIndex: -1
                     }}
-                    onMouseEnter={(e) => {
-                      if (currentPage !== 'competition') {
-                        e.currentTarget.style.color = 'var(--brand-yellow)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentPage !== 'competition') {
-                        e.currentTarget.style.color = 'var(--brand-light-gray)';
-                      }
-                    }}
-                  >
-                    {/* Background for selected state */}
-                    {currentPage === 'competition' && (
-                      <span 
-                        className="absolute inset-0 rounded-lg"
-                        style={{
-                          background: 'rgba(240, 185, 11, 0.15)',
-                          zIndex: -1
-                        }}
-                      />
-                    )}
-                    
-                    {t('realtimeNav', language)}
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      console.log('配置 button clicked, onPageChange:', onPageChange);
-                      onPageChange?.('traders');
-                    }}
-                    className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
+                  />
+                )}
+                
+                {t('realtimeNav', language)}
+              </button>
+              
+              <button
+                onClick={() => {
+                  console.log('配置 button clicked, onPageChange:', onPageChange);
+                  onPageChange?.('traders');
+                }}
+                className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
+                style={{
+                  color: currentPage === 'traders' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  position: 'relative'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== 'traders') {
+                    e.currentTarget.style.color = 'var(--brand-yellow)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== 'traders') {
+                    e.currentTarget.style.color = 'var(--brand-light-gray)';
+                  }
+                }}
+              >
+                {/* Background for selected state */}
+                {currentPage === 'traders' && (
+                  <span 
+                    className="absolute inset-0 rounded-lg"
                     style={{
-                      color: currentPage === 'traders' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
-                      padding: '8px 16px',
-                      borderRadius: '8px',
-                      position: 'relative'
+                      background: 'rgba(240, 185, 11, 0.15)',
+                      zIndex: -1
                     }}
-                    onMouseEnter={(e) => {
-                      if (currentPage !== 'traders') {
-                        e.currentTarget.style.color = 'var(--brand-yellow)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentPage !== 'traders') {
-                        e.currentTarget.style.color = 'var(--brand-light-gray)';
-                      }
-                    }}
-                  >
-                    {/* Background for selected state */}
-                    {currentPage === 'traders' && (
-                      <span 
-                        className="absolute inset-0 rounded-lg"
-                        style={{
-                          background: 'rgba(240, 185, 11, 0.15)',
-                          zIndex: -1
-                        }}
-                      />
-                    )}
-                    
-                    {t('configNav', language)}
-                  </button>
-                  
-                  <button
-                    onClick={() => {
-                      console.log('看板 button clicked, onPageChange:', onPageChange);
-                      onPageChange?.('trader');
-                    }}
-                    className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
+                  />
+                )}
+                
+                {t('configNav', language)}
+              </button>
+              
+              <button
+                onClick={() => {
+                  console.log('看板 button clicked, onPageChange:', onPageChange);
+                  onPageChange?.('trader');
+                }}
+                className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
+                style={{
+                  color: currentPage === 'trader' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
+                  padding: '8px 16px',
+                  borderRadius: '8px',
+                  position: 'relative'
+                }}
+                onMouseEnter={(e) => {
+                  if (currentPage !== 'trader') {
+                    e.currentTarget.style.color = 'var(--brand-yellow)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (currentPage !== 'trader') {
+                    e.currentTarget.style.color = 'var(--brand-light-gray)';
+                  }
+                }}
+              >
+                {/* Background for selected state */}
+                {currentPage === 'trader' && (
+                  <span 
+                    className="absolute inset-0 rounded-lg"
                     style={{
-                      color: currentPage === 'trader' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
-                      padding: '8px 16px',
-                      borderRadius: '8px',
-                      position: 'relative'
+                      background: 'rgba(240, 185, 11, 0.15)',
+                      zIndex: -1
                     }}
-                    onMouseEnter={(e) => {
-                      if (currentPage !== 'trader') {
-                        e.currentTarget.style.color = 'var(--brand-yellow)';
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentPage !== 'trader') {
-                        e.currentTarget.style.color = 'var(--brand-light-gray)';
-                      }
-                    }}
-                  >
-                    {/* Background for selected state */}
-                    {currentPage === 'trader' && (
-                      <span 
-                        className="absolute inset-0 rounded-lg"
-                        style={{
-                          background: 'rgba(240, 185, 11, 0.15)',
-                          zIndex: -1
-                        }}
-                      />
-                    )}
-                    
-                    {t('dashboardNav', language)}
-                  </button>
-                </>
-              ) : (
-                // Landing page navigation when not logged in
-                <a
-                  href='/competition'
-                  className='text-sm font-bold transition-all duration-300 relative focus:outline-2 focus:outline-yellow-500'
-                  style={{
-                    color: currentPage === 'competition' ? 'var(--brand-yellow)' : 'var(--brand-light-gray)',
-                    padding: '8px 16px',
-                    borderRadius: '8px',
-                    position: 'relative'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (currentPage !== 'competition') {
-                      e.currentTarget.style.color = 'var(--brand-yellow)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (currentPage !== 'competition') {
-                      e.currentTarget.style.color = 'var(--brand-light-gray)';
-                    }
-                  }}
-                >
-                  {/* Background for selected state */}
-                  {currentPage === 'competition' && (
-                    <span 
-                      className="absolute inset-0 rounded-lg"
-                      style={{
-                        background: 'rgba(240, 185, 11, 0.15)',
-                        zIndex: -1
-                      }}
-                    />
-                  )}
-                  
-                  {t('realtimeNav', language)}
-                </a>
-              )}
+                  />
+                )}
+                
+                {t('dashboardNav', language)}
+              </button>
             </div>
             
             {/* Right Side - Original Navigation Items and Login */}
@@ -223,7 +183,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   key={item.key}
                   href={
                     item.key === 'GitHub'
-                      ? 'https://github.com/tinkle-community/nofx'
+                      ? 'https://github.com/tinkle-community/nextrade'
                       : item.key === 'community'
                       ? 'https://t.me/nofx_dev_community'
                       : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
@@ -241,9 +201,41 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                 </a>
               ))}
 
-              {/* User Info and Actions */}
-              {isLoggedIn && user ? (
-                <div className='flex items-center gap-3'>
+              {/* User Info and Trading Mode Display */}
+              {isLoggedIn && user && (
+                <div className='flex items-center gap-4'>
+                  {/* Trading Mode Badge with Switch */}
+                  {tradingMode && (
+                    <div className='flex items-center gap-2'>
+                      <button
+                        onClick={() => onTradingModeChange?.('spot')}
+                        className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                          tradingMode === 'spot' ? 'scale-105' : 'opacity-60 hover:opacity-80'
+                        }`}
+                        style={{ 
+                          background: tradingMode === 'spot' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.05)',
+                          color: '#10B981',
+                          border: `1px solid ${tradingMode === 'spot' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.1)'}`
+                        }}
+                      >
+                        💰 现货
+                      </button>
+                      <button
+                        onClick={() => onTradingModeChange?.('futures')}
+                        className={`px-3 py-1 rounded-lg text-sm font-semibold transition-all ${
+                          tradingMode === 'futures' ? 'scale-105' : 'opacity-60 hover:opacity-80'
+                        }`}
+                        style={{ 
+                          background: tradingMode === 'futures' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.05)',
+                          color: '#EF4444',
+                          border: `1px solid ${tradingMode === 'futures' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.1)'}`
+                        }}
+                      >
+                        ⚡ 合约
+                      </button>
+                    </div>
+                  )}
+
                   {/* User Info with Dropdown */}
                   <div className='relative' ref={userDropdownRef}>
                     <button
@@ -266,42 +258,18 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                           <div className='text-xs' style={{ color: 'var(--text-secondary)' }}>{t('loggedInAs', language)}</div>
                           <div className='text-sm font-medium' style={{ color: 'var(--brand-light-gray)' }}>{user.email}</div>
                         </div>
-                        {!isAdminMode && onLogout && (
-                          <button
-                            onClick={() => {
-                              onLogout()
-                              setUserDropdownOpen(false)
-                            }}
-                            className='w-full px-3 py-2 text-sm font-semibold transition-colors hover:opacity-80 text-center'
-                            style={{ background: 'var(--binance-red-bg)', color: 'var(--binance-red)' }}
-                          >
-{t('exitLogin', language)}
-                          </button>
+                        {tradingMode && (
+                          <div className='px-3 py-2 border-b' style={{ borderColor: 'var(--panel-border)' }}>
+                            <div className='text-xs' style={{ color: 'var(--text-secondary)' }}>交易模式</div>
+                            <div className='text-sm font-medium' style={{ color: tradingMode === 'spot' ? '#10B981' : '#EF4444' }}>
+                              {tradingMode === 'spot' ? '现货交易' : '合约交易'}
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
                   </div>
                 </div>
-              ) : (
-                /* Show login/register buttons when not logged in and not on login/register pages */
-                currentPage !== 'login' && currentPage !== 'register' && (
-                  <div className='flex items-center gap-3'>
-                    <a
-                      href='/login'
-                      className='px-3 py-2 text-sm font-medium transition-colors rounded'
-                      style={{ color: 'var(--brand-light-gray)' }}
-                    >
-{t('signIn', language)}
-                    </a>
-                    <a
-                      href='/register'
-                      className='px-4 py-2 rounded font-semibold text-sm transition-colors hover:opacity-90'
-                      style={{ background: 'var(--brand-yellow)', color: 'var(--brand-black)' }}
-                    >
-{t('signUp', language)}
-                    </a>
-                  </div>
-                )
               )}
               
               {/* Language Toggle - Always at the rightmost */}
@@ -511,7 +479,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
               key={item.key} 
               href={
                 item.key === 'GitHub'
-                  ? 'https://github.com/tinkle-community/nofx'
+                  ? 'https://github.com/tinkle-community/nextrade'
                   : item.key === 'community'
                   ? 'https://t.me/nofx_dev_community'
                   : `#${item.key === 'features' ? 'features' : 'how-it-works'}`
@@ -558,7 +526,7 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
             </div>
           </div>
 
-          {/* User info and logout for mobile when logged in */}
+          {/* User info and trading mode for mobile when logged in */}
           {isLoggedIn && user && (
             <div className='mt-4 pt-4' style={{ borderTop: '1px solid var(--panel-border)' }}>
               <div className='flex items-center gap-2 px-3 py-2 mb-2 rounded' style={{ background: 'var(--panel-bg)' }}>
@@ -570,42 +538,49 @@ export default function HeaderBar({ isLoggedIn = false, isHomePage = false, curr
                   <div className='text-sm' style={{ color: 'var(--brand-light-gray)' }}>{user.email}</div>
                 </div>
               </div>
-              {!isAdminMode && onLogout && (
-                <button
-                  onClick={() => {
-                    onLogout()
-                    setMobileMenuOpen(false)
-                  }}
-                  className='w-full px-4 py-2 rounded text-sm font-semibold transition-colors text-center'
-                  style={{ background: 'var(--binance-red-bg)', color: 'var(--binance-red)' }}
-                >
-                  {t('exitLogin', language)}
-                </button>
+              {tradingMode && (
+                <div className='space-y-2'>
+                  <div className='text-xs px-3' style={{ color: 'var(--text-secondary)' }}>切换交易模式:</div>
+                  <div className='flex gap-2'>
+                    <button
+                      onClick={() => {
+                        onTradingModeChange?.('spot')
+                        setMobileMenuOpen(false)
+                      }}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-all ${
+                        tradingMode === 'spot' ? 'scale-105' : 'opacity-60'
+                      }`}
+                      style={{ 
+                        background: tradingMode === 'spot' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(16, 185, 129, 0.05)',
+                        color: '#10B981',
+                        border: `1px solid ${tradingMode === 'spot' ? 'rgba(16, 185, 129, 0.3)' : 'rgba(16, 185, 129, 0.1)'}`
+                      }}
+                    >
+                      💰 现货模式
+                    </button>
+                    <button
+                      onClick={() => {
+                        onTradingModeChange?.('futures')
+                        setMobileMenuOpen(false)
+                      }}
+                      className={`flex-1 px-3 py-2 rounded text-sm font-semibold transition-all ${
+                        tradingMode === 'futures' ? 'scale-105' : 'opacity-60'
+                      }`}
+                      style={{ 
+                        background: tradingMode === 'futures' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.05)',
+                        color: '#EF4444',
+                        border: `1px solid ${tradingMode === 'futures' ? 'rgba(239, 68, 68, 0.3)' : 'rgba(239, 68, 68, 0.1)'}`
+                      }}
+                    >
+                      ⚡ 合约模式
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           )}
 
-          {/* Show login/register buttons when not logged in and not on login/register pages */}
-          {!isLoggedIn && currentPage !== 'login' && currentPage !== 'register' && (
-            <div className='space-y-2 mt-2'>
-              <a
-                href='/login'
-                className='block w-full px-4 py-2 rounded text-sm font-medium text-center transition-colors'
-                style={{ color: 'var(--brand-light-gray)', border: '1px solid var(--brand-light-gray)' }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('signIn', language)}
-              </a>
-              <a
-                href='/register'
-                className='block w-full px-4 py-2 rounded font-semibold text-sm text-center transition-colors'
-                style={{ background: 'var(--brand-yellow)', color: 'var(--brand-black)' }}
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('signUp', language)}
-              </a>
-            </div>
-          )}
+          {/* 管理员模式下不显示登录/注册按钮 */}
         </div>
       </motion.div>
     </nav>

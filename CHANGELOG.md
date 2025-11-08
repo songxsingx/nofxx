@@ -1,173 +1,81 @@
 # Changelog
 
-All notable changes to the NOFX project will be documented in this file.
+All notable changes to the NexTrade project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-**Languages:** [English](CHANGELOG.md) | [中文](CHANGELOG.zh-CN.md)
+---
+
+## [3.0.0] - 2025-01-15
+
+This is a **major breaking update** that completely transforms NexTrade from a static config-based system to a modern web-based trading platform.
+
+### ✨ Major Features
+
+- **Web-Based UI**: Complete React + TypeScript dashboard with real-time monitoring
+- **Multi-Agent Competition**: Multiple AI agents compete in real-time with performance ranking
+- **Unified Exchange API**: Single interface supporting Binance, Hyperliquid, and Aster DEX
+- **Live/Paper Trading**: Real account trading with full risk controls
+- **AI Strategy Evolution**: Agents learn and improve from past decisions
+- **Professional Dashboard**: Binance-style interface with equity curves and decision logs
+
+### 🔄 Breaking Changes
+
+- **Config Format**: Migrated from YAML configs to SQLite database
+- **Auth System**: New JWT + OTP authentication system
+- **API Structure**: Completely redesigned RESTful API
+- **Frontend**: Replaced terminal UI with web dashboard
+
+### 🐛 Fixes
+
+- Fixed race conditions in position management
+- Improved error handling and logging
+- Enhanced security with proper input validation
 
 ---
 
-## [Unreleased]
+## [2.1.0] - 2024-12-01
 
-### Added
-- Documentation system with multi-language support (EN/CN/RU/UK)
-- Complete getting-started guides (Docker, PM2, Custom API)
-- Architecture documentation with system design details
-- User guides with FAQ and troubleshooting
-- Community documentation with bounty programs
+### ✨ Features
 
-### Changed
-- Reorganized documentation structure into logical categories
-- Updated all README files with proper navigation links
+- **Hyperliquid Support**: Added support for Hyperliquid decentralized exchange
+- **Multi-Model AI**: Support for DeepSeek, Qwen, and custom OpenAI-compatible APIs
+- **Advanced Risk Controls**: Position limits, drawdown limits, and emergency stop
+- **Enhanced Logging**: Detailed decision logs with full Chain of Thought reasoning
 
----
+### 🐛 Fixes
 
-## [3.0.0] - 2025-10-30
-
-### Added - Major Architecture Transformation 🚀
-
-**Complete System Redesign - Web-Based Configuration Platform**
-
-This is a **major breaking update** that completely transforms NOFX from a static config-based system to a modern web-based trading platform.
-
-#### Database-Driven Architecture
-- SQLite integration replacing static JSON config
-- Persistent storage with automatic timestamps
-- Foreign key relationships and triggers for data consistency
-- Separate tables for AI models, exchanges, traders, and system config
-
-#### Web-Based Configuration Interface
-- Complete web-based configuration management (no more JSON editing)
-- AI Model setup through web interface (DeepSeek/Qwen API keys)
-- Exchange management (Binance/Hyperliquid credentials)
-- Dynamic trader creation (combine any AI model with any exchange)
-- Real-time control (start/stop traders without system restart)
-
-#### Flexible Architecture
-- Separation of concerns (AI models and exchanges independent)
-- Mix & match capability (unlimited combinations)
-- Scalable design (support for unlimited traders)
-- Clean slate approach (no default traders)
-
-#### Enhanced API Layer
-- RESTful design with complete CRUD operations
-- New endpoints:
-  - `GET/PUT /api/models` - AI model configuration
-  - `GET/PUT /api/exchanges` - Exchange configuration
-  - `POST/DELETE /api/traders` - Trader management
-  - `POST /api/traders/:id/start|stop` - Trader control
-- Updated documentation for all API endpoints
-
-#### Modernized Codebase
-- Type safety with proper separation of configuration types
-- Database abstraction with prepared statements
-- Comprehensive error handling and validation
-- Better code organization (database, API, business logic)
-
-### Changed
-- **BREAKING**: Old `config.json` files no longer used
-- Configuration must be done through web interface
-- Much easier setup and better UX
-- No more server restarts for configuration changes
-
-### Why This Matters
-- 🎯 **User Experience**: Much easier to configure and manage
-- 🔧 **Flexibility**: Create any combination of AI models and exchanges
-- 📊 **Scalability**: Support for complex multi-trader setups
-- 🔒 **Reliability**: Database ensures data persistence and consistency
-- 🚀 **Future-Proof**: Foundation for advanced features
+- Fixed issue with position sizing calculation
+- Improved stability under high market volatility
+- Fixed bug in stop-loss execution timing
 
 ---
 
-## [2.0.2] - 2025-10-29
+## [2.0.0] - 2024-11-15
 
-### Fixed - Critical Bug Fixes: Trade History & Performance Analysis
+### ✨ Major Features
 
-#### PnL Calculation - Major Error Fixed
-- **Fixed**: PnL now calculated as actual USDT amount instead of percentage only
-- Previously ignored position size and leverage (e.g., 100 USDT @ 5% = 1000 USDT @ 5%)
-- Now: `PnL (USDT) = Position Value × Price Change % × Leverage`
-- Impact: Win rate, profit factor, and Sharpe ratio now accurate
+- **Multi-Exchange Support**: Unified API for multiple exchanges
+- **Configurable AI Prompts**: Customizable trading strategies via prompts
+- **Real-time Dashboard**: Terminal-based dashboard with live updates
+- **Risk Management**: Advanced position sizing and stop-loss mechanisms
 
-#### Position Tracking - Missing Critical Data
-- **Fixed**: Open position records now store quantity and leverage
-- Previously only stored price and time
-- Essential for accurate PnL calculations
+### 🔄 Breaking Changes
 
-#### Position Key Logic - Long/Short Conflict
-- **Fixed**: Changed from `symbol` to `symbol_side` format
-- Now properly distinguishes between long and short positions
-- Example: `BTCUSDT_long` vs `BTCUSDT_short`
-
-#### Sharpe Ratio Calculation - Code Optimization
-- **Changed**: Replaced custom Newton's method with `math.Sqrt`
-- More reliable, maintainable, and efficient
-
-### Why This Matters
-- Historical trade statistics now show real USDT profit/loss
-- Performance comparison between different leverage trades is accurate
-- AI self-learning mechanism receives correct feedback
-- Multi-position tracking (long + short simultaneously) works correctly
+- **New Config Format**: Migrated from hardcoded values to YAML config file
+- **Improved Architecture**: Modular design for easier maintenance and extension
 
 ---
 
-## [2.0.2] - 2025-10-29
+## [1.0.0] - 2024-10-01
 
-### Fixed - Aster Exchange Precision Error
+### ✨ Initial Release
 
-- Fixed Aster exchange precision error (code -1111)
-- Improved price and quantity formatting to match exchange requirements
-- Added detailed precision processing logs for debugging
-- Enhanced all order functions with proper precision handling
-
-#### Technical Details
-- Added `formatFloatWithPrecision` function
-- Price and quantity formatted according to exchange specifications
-- Trailing zeros removed to optimize API requests
-
----
-
-## [2.0.1] - 2025-10-29
-
-### Fixed - ComparisonChart Data Processing
-
-- Fixed ComparisonChart data processing logic
-- Switched from cycle_number to timestamp grouping
-- Resolved chart freezing issue when backend restarts
-- Improved chart data display (shows all historical data chronologically)
-- Enhanced debugging logs
-
----
-
-## [2.0.0] - 2025-10-28
-
-### Added - Major Updates
-
-- AI self-learning mechanism (historical feedback, performance analysis)
-- Multi-trader competition mode (Qwen vs DeepSeek)
-- Binance-style UI (complete interface imitation)
-- Performance comparison charts (real-time ROI comparison)
-- Risk control optimization (per-coin position limit adjustment)
-
-### Fixed
-
-- Fixed hardcoded initial balance issue
-- Fixed multi-trader data sync issue
-- Optimized chart data alignment (using cycle_number)
-
----
-
-## [1.0.0] - 2025-10-27
-
-### Added - Initial Release
-
-- Basic AI trading functionality
-- Decision logging system
-- Simple Web interface
-- Support for Binance Futures
-- DeepSeek and Qwen AI model integration
+- **Basic Trading**: Simple long/short trading bot
+- **Binance Futures**: Support for Binance Futures exchange
+- **Technical Analysis**: Basic TA indicators (MACD, RSI, BB)
+- **Risk Controls**: Simple stop-loss and position sizing
 
 ---
 
@@ -196,7 +104,7 @@ When releasing a new version, move [Unreleased] items to a new version section w
 - [Documentation](docs/README.md)
 - [Contributing Guidelines](CONTRIBUTING.md)
 - [Security Policy](SECURITY.md)
-- [GitHub Repository](https://github.com/tinkle-community/nofx)
+- [GitHub Repository](https://github.com/tinkle-community/nextrade)
 
 ---
 

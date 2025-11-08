@@ -118,6 +118,10 @@ export interface Exchange {
   asterUser?: string;
   asterSigner?: string;
   asterPrivateKey?: string;
+  // Gate.io 特定字段
+  gateioPassphrase?: string;
+  // OKX 特定字段
+  okxPassphrase?: string;
 }
 
 export interface CreateTraderRequest {
@@ -135,6 +139,25 @@ export interface CreateTraderRequest {
   is_cross_margin?: boolean;
   use_coin_pool?: boolean;
   use_oi_top?: boolean;
+  // HODL波段盈利定投策略配置
+  strategy?: string; // "ai" or "hodl_band_profit"
+  strategy_config?: HODLBandProfitConfig;
+  // 现货交易配置
+  spot_order_type?: 'market' | 'limit';
+  spot_position_size_pct?: number;
+  spot_take_profit_pct?: number;
+  spot_stop_loss_pct?: number;
+}
+
+// HODL波段盈利定投策略配置
+export interface HODLBandProfitConfig {
+  symbol: string;              // 目标币种，如"BTCUSDT"
+  base_amount_usdt: number;    // 初始投入金额（USDT）
+  profit_trigger_pct: number;  // 盈利触发百分比（如10表示10%）
+  reinvest_ratio: number;      // 再投资比例（如0.5表示盈利的50%）
+  interval_hours: number;      // 检查间隔（小时）
+  take_profit_pct: number;     // 止盈百分比（如100表示100%）
+  stop_loss_pct: number;       // 止损百分比（如10表示-10%）
 }
 
 export interface UpdateModelConfigRequest {
@@ -161,6 +184,10 @@ export interface UpdateExchangeConfigRequest {
       aster_user?: string;
       aster_signer?: string;
       aster_private_key?: string;
+      // Gate.io 特定字段
+      gateio_passphrase?: string;
+      // OKX 特定字段
+      okx_passphrase?: string;
     };
   };
 }
@@ -201,4 +228,12 @@ export interface TraderConfigData {
   initial_balance: number;
   scan_interval_minutes: number;
   is_running: boolean;
+  // HODL波段盈利定投策略配置
+  strategy?: string;
+  strategy_config?: HODLBandProfitConfig;
+  // 现货交易配置
+  spot_order_type?: 'market' | 'limit';
+  spot_position_size_pct?: number;
+  spot_take_profit_pct?: number;
+  spot_stop_loss_pct?: number;
 }

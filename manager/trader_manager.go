@@ -5,8 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"nofx/config"
-	"nofx/trader"
+	"nextrade/backend/strategy"
+	"nextrade/config"
+	"nextrade/trader"
 	"sort"
 	"strconv"
 	"strings"
@@ -23,9 +24,9 @@ type CompetitionCache struct {
 
 // TraderManager 管理多个trader实例
 type TraderManager struct {
-	traders         map[string]*trader.AutoTrader // key: trader ID
+	traders          map[string]*trader.AutoTrader // key: trader ID
 	competitionCache *CompetitionCache
-	mu              sync.RWMutex
+	mu               sync.RWMutex
 }
 
 // NewTraderManager 创建trader管理器
@@ -241,14 +242,65 @@ func (tm *TraderManager) addTraderFromDB(traderCfg *config.TraderRecord, aiModel
 		SystemPromptTemplate:  traderCfg.SystemPromptTemplate, // 系统提示词模板
 	}
 
+	// 设置策略配置
+	if traderCfg.Strategy != "" && traderCfg.Strategy != "ai" {
+		traderConfig.Strategy = traderCfg.Strategy
+
+		// 解析HODL波段盈利策略配置
+		if traderCfg.Strategy == "hodl_band_profit" && traderCfg.StrategyConfig != "" {
+			var hodlConfig strategy.HODLBandProfitConfig
+			if err := json.Unmarshal([]byte(traderCfg.StrategyConfig), &hodlConfig); err == nil {
+				traderConfig.HODLBandProfitConfig = &hodlConfig
+				log.Printf("✓ 交易员 %s 启用HODL波段盈利策略: 币种=%s, 初始金额=$%.2f, 触发=%.1f%%, 再投=%.0f%%",
+					traderCfg.Name, hodlConfig.Symbol, hodlConfig.BaseAmountUSDT,
+					hodlConfig.ProfitTriggerPct, hodlConfig.ReinvestRatio*100)
+			} else {
+				log.Printf("⚠️ 交易员 %s 的HODL策略配置解析失败: %v", traderCfg.Name, err)
+			}
+		}
+	} else {
+		traderConfig.Strategy = "ai" // 默认AI策略
+	}
+
 	// 根据交易所类型设置API密钥
 	if exchangeCfg.ID == "binance" {
 		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
 		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet // 传递测试网配置
 	} else if exchangeCfg.ID == "hyperliquid" {
-		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey // hyperliquid用APIKey存储private key
+		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey // hyperliquid用APIKey存僨private key
 		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
 	} else if exchangeCfg.ID == "aster" {
+		traderConfig.AsterUser = exchangeCfg.AsterUser
+		traderConfig.AsterSigner = exchangeCfg.AsterSigner
+		traderConfig.AsterPrivateKey = exchangeCfg.AsterPrivateKey
+	} else if exchangeCfg.ID == "binance_spot" {
+		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
+		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet // 传递测试网配置
+	} else if exchangeCfg.ID == "gateio_spot" || exchangeCfg.ID == "gateio_futures" {
+		// Gate.io现货/合约配置
+		traderConfig.ExchangeConfig = map[string]interface{}{
+			"gateio_api_key":    exchangeCfg.APIKey,
+			"gateio_secret_key": exchangeCfg.SecretKey,
+			"gateio_passphrase": exchangeCfg.GateioPassphrase,
+			"gateio_testnet":    exchangeCfg.Testnet,
+			"gateio_settle":     "usdt",
+		}
+	} else if exchangeCfg.ID == "okx_spot" || exchangeCfg.ID == "okx_futures" {
+		// OKX现货/合约配置
+		traderConfig.ExchangeConfig = map[string]interface{}{
+			"okx_api_key":    exchangeCfg.APIKey,
+			"okx_secret_key": exchangeCfg.SecretKey,
+			"okx_passphrase": exchangeCfg.OKXPassphrase,
+			"okx_testnet":    exchangeCfg.Testnet,
+		}
+	} else if exchangeCfg.ID == "hyperliquid_spot" {
+		// Hyperliquid现货配置
+		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey
+		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
+	} else if exchangeCfg.ID == "aster_spot" {
+		// Aster现货配置
 		traderConfig.AsterUser = exchangeCfg.AsterUser
 		traderConfig.AsterSigner = exchangeCfg.AsterSigner
 		traderConfig.AsterPrivateKey = exchangeCfg.AsterPrivateKey
@@ -347,14 +399,65 @@ func (tm *TraderManager) AddTraderFromDB(traderCfg *config.TraderRecord, aiModel
 		TradingCoins:          tradingCoins,
 	}
 
+	// 设置策略配置
+	if traderCfg.Strategy != "" && traderCfg.Strategy != "ai" {
+		traderConfig.Strategy = traderCfg.Strategy
+
+		// 解析HODL波段盈利策略配置
+		if traderCfg.Strategy == "hodl_band_profit" && traderCfg.StrategyConfig != "" {
+			var hodlConfig strategy.HODLBandProfitConfig
+			if err := json.Unmarshal([]byte(traderCfg.StrategyConfig), &hodlConfig); err == nil {
+				traderConfig.HODLBandProfitConfig = &hodlConfig
+				log.Printf("✓ 交易员 %s 启用HODL波段盈利策略: 币种=%s, 初始金额=$%.2f, 触发=%.1f%%, 再投=%.0f%%",
+					traderCfg.Name, hodlConfig.Symbol, hodlConfig.BaseAmountUSDT,
+					hodlConfig.ProfitTriggerPct, hodlConfig.ReinvestRatio*100)
+			} else {
+				log.Printf("⚠️ 交易员 %s 的HODL策略配置解析失败: %v", traderCfg.Name, err)
+			}
+		}
+	} else {
+		traderConfig.Strategy = "ai" // 默认AI策略
+	}
+
 	// 根据交易所类型设置API密钥
 	if exchangeCfg.ID == "binance" {
 		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
 		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet // 传递测试网配置
 	} else if exchangeCfg.ID == "hyperliquid" {
-		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey // hyperliquid用APIKey存储private key
+		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey // hyperliquid用APIKey存僨private key
 		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
 	} else if exchangeCfg.ID == "aster" {
+		traderConfig.AsterUser = exchangeCfg.AsterUser
+		traderConfig.AsterSigner = exchangeCfg.AsterSigner
+		traderConfig.AsterPrivateKey = exchangeCfg.AsterPrivateKey
+	} else if exchangeCfg.ID == "binance_spot" {
+		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
+		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet // 传递测试网配置
+	} else if exchangeCfg.ID == "gateio_spot" || exchangeCfg.ID == "gateio_futures" {
+		// Gate.io现货/合约配置
+		traderConfig.ExchangeConfig = map[string]interface{}{
+			"gateio_api_key":    exchangeCfg.APIKey,
+			"gateio_secret_key": exchangeCfg.SecretKey,
+			"gateio_passphrase": exchangeCfg.GateioPassphrase,
+			"gateio_testnet":    exchangeCfg.Testnet,
+			"gateio_settle":     "usdt",
+		}
+	} else if exchangeCfg.ID == "okx_spot" || exchangeCfg.ID == "okx_futures" {
+		// OKX现货/合约配置
+		traderConfig.ExchangeConfig = map[string]interface{}{
+			"okx_api_key":    exchangeCfg.APIKey,
+			"okx_secret_key": exchangeCfg.SecretKey,
+			"okx_passphrase": exchangeCfg.OKXPassphrase,
+			"okx_testnet":    exchangeCfg.Testnet,
+		}
+	} else if exchangeCfg.ID == "hyperliquid_spot" {
+		// Hyperliquid现货配置
+		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey
+		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
+	} else if exchangeCfg.ID == "aster_spot" {
+		// Aster现货配置
 		traderConfig.AsterUser = exchangeCfg.AsterUser
 		traderConfig.AsterSigner = exchangeCfg.AsterSigner
 		traderConfig.AsterPrivateKey = exchangeCfg.AsterPrivateKey
@@ -506,19 +609,19 @@ func (tm *TraderManager) GetCompetitionData() (map[string]interface{}, error) {
 	tm.competitionCache.mu.RUnlock()
 
 	tm.mu.RLock()
-	
+
 	// 获取所有交易员列表
 	allTraders := make([]*trader.AutoTrader, 0, len(tm.traders))
 	for _, t := range tm.traders {
 		allTraders = append(allTraders, t)
 	}
 	tm.mu.RUnlock()
-	
+
 	log.Printf("🔄 重新获取竞赛数据，交易员数量: %d", len(allTraders))
-	
+
 	// 并发获取交易员数据
 	traders := tm.getConcurrentTraderData(allTraders)
-	
+
 	// 按收益率排序（降序）
 	sort.Slice(traders, func(i, j int) bool {
 		pnlPctI, okI := traders[i]["total_pnl_pct"].(float64)
@@ -531,14 +634,14 @@ func (tm *TraderManager) GetCompetitionData() (map[string]interface{}, error) {
 		}
 		return pnlPctI > pnlPctJ
 	})
-	
+
 	// 限制返回前50名
 	totalCount := len(traders)
 	limit := 50
 	if len(traders) > limit {
 		traders = traders[:limit]
 	}
-	
+
 	comparison := make(map[string]interface{})
 	comparison["traders"] = traders
 	comparison["count"] = len(traders)
@@ -559,21 +662,21 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 		index int
 		data  map[string]interface{}
 	}
-	
+
 	// 创建结果通道
 	resultChan := make(chan traderResult, len(traders))
-	
+
 	// 并发获取每个交易员的数据
 	for i, t := range traders {
 		go func(index int, trader *trader.AutoTrader) {
 			// 设置单个交易员的超时时间为3秒
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
-			
+
 			// 使用通道来实现超时控制
 			accountChan := make(chan map[string]interface{}, 1)
 			errorChan := make(chan error, 1)
-			
+
 			go func() {
 				account, err := trader.GetAccountInfo()
 				if err != nil {
@@ -582,10 +685,10 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					accountChan <- account
 				}
 			}()
-			
+
 			status := trader.GetStatus()
 			var traderData map[string]interface{}
-			
+
 			select {
 			case account := <-accountChan:
 				// 成功获取账户信息
@@ -634,18 +737,18 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"error":           "获取超时",
 				}
 			}
-			
+
 			resultChan <- traderResult{index: index, data: traderData}
 		}(i, t)
 	}
-	
+
 	// 收集所有结果
 	results := make([]map[string]interface{}, len(traders))
 	for i := 0; i < len(traders); i++ {
 		result := <-resultChan
 		results[result.index] = result.data
 	}
-	
+
 	return results
 }
 
@@ -656,20 +759,20 @@ func (tm *TraderManager) GetTopTradersData() (map[string]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// 从竞赛数据中提取前5名
 	allTraders, ok := competitionData["traders"].([]map[string]interface{})
 	if !ok {
 		return nil, fmt.Errorf("竞赛数据格式错误")
 	}
-	
+
 	// 限制返回前5名
 	limit := 5
 	topTraders := allTraders
 	if len(allTraders) > limit {
 		topTraders = allTraders[:limit]
 	}
-	
+
 	result := map[string]interface{}{
 		"traders": topTraders,
 		"count":   len(topTraders),
@@ -891,14 +994,65 @@ func (tm *TraderManager) loadSingleTrader(traderCfg *config.TraderRecord, aiMode
 		SystemPromptTemplate: traderCfg.SystemPromptTemplate, // 系统提示词模板
 	}
 
+	// 设置策略配置
+	if traderCfg.Strategy != "" && traderCfg.Strategy != "ai" {
+		traderConfig.Strategy = traderCfg.Strategy
+
+		// 解析HODL波段盈利策略配置
+		if traderCfg.Strategy == "hodl_band_profit" && traderCfg.StrategyConfig != "" {
+			var hodlConfig strategy.HODLBandProfitConfig
+			if err := json.Unmarshal([]byte(traderCfg.StrategyConfig), &hodlConfig); err == nil {
+				traderConfig.HODLBandProfitConfig = &hodlConfig
+				log.Printf("✓ 交易员 %s 启用HODL波段盈利策略: 币种=%s, 初始金额=$%.2f, 触发=%.1f%%, 再投=%.0f%%",
+					traderCfg.Name, hodlConfig.Symbol, hodlConfig.BaseAmountUSDT,
+					hodlConfig.ProfitTriggerPct, hodlConfig.ReinvestRatio*100)
+			} else {
+				log.Printf("⚠️ 交易员 %s 的HODL策略配置解析失败: %v", traderCfg.Name, err)
+			}
+		}
+	} else {
+		traderConfig.Strategy = "ai" // 默认AI策略
+	}
+
 	// 根据交易所类型设置API密钥
 	if exchangeCfg.ID == "binance" {
 		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
 		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet // 传递测试网配置
 	} else if exchangeCfg.ID == "hyperliquid" {
-		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey // hyperliquid用APIKey存储private key
+		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey // hyperliquid用APIKey存僨private key
 		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
 	} else if exchangeCfg.ID == "aster" {
+		traderConfig.AsterUser = exchangeCfg.AsterUser
+		traderConfig.AsterSigner = exchangeCfg.AsterSigner
+		traderConfig.AsterPrivateKey = exchangeCfg.AsterPrivateKey
+	} else if exchangeCfg.ID == "binance_spot" {
+		traderConfig.BinanceAPIKey = exchangeCfg.APIKey
+		traderConfig.BinanceSecretKey = exchangeCfg.SecretKey
+		traderConfig.BinanceTestnet = exchangeCfg.Testnet // 传递测试网配置
+	} else if exchangeCfg.ID == "gateio_spot" || exchangeCfg.ID == "gateio_futures" {
+		// Gate.io现货/合约配置
+		traderConfig.ExchangeConfig = map[string]interface{}{
+			"gateio_api_key":    exchangeCfg.APIKey,
+			"gateio_secret_key": exchangeCfg.SecretKey,
+			"gateio_passphrase": exchangeCfg.GateioPassphrase,
+			"gateio_testnet":    exchangeCfg.Testnet,
+			"gateio_settle":     "usdt",
+		}
+	} else if exchangeCfg.ID == "okx_spot" || exchangeCfg.ID == "okx_futures" {
+		// OKX现货/合约配置
+		traderConfig.ExchangeConfig = map[string]interface{}{
+			"okx_api_key":    exchangeCfg.APIKey,
+			"okx_secret_key": exchangeCfg.SecretKey,
+			"okx_passphrase": exchangeCfg.OKXPassphrase,
+			"okx_testnet":    exchangeCfg.Testnet,
+		}
+	} else if exchangeCfg.ID == "hyperliquid_spot" {
+		// Hyperliquid现货配置
+		traderConfig.HyperliquidPrivateKey = exchangeCfg.APIKey
+		traderConfig.HyperliquidWalletAddr = exchangeCfg.HyperliquidWalletAddr
+	} else if exchangeCfg.ID == "aster_spot" {
+		// Aster现货配置
 		traderConfig.AsterUser = exchangeCfg.AsterUser
 		traderConfig.AsterSigner = exchangeCfg.AsterSigner
 		traderConfig.AsterPrivateKey = exchangeCfg.AsterPrivateKey

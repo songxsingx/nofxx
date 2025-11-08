@@ -36,7 +36,7 @@ interface AITradersPageProps {
 
 export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
   const { language } = useLanguage();
-  const { user, token } = useAuth();
+  const { user, token, tradingMode } = useAuth();
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showModelModal, setShowModelModal] = useState(false);
@@ -54,37 +54,34 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
     oiTopUrl: ''
   });
 
-  const { data: traders, mutate: mutateTraders } = useSWR<TraderInfo[]>(
+  const { data: allTraders, mutate: mutateTraders } = useSWR<TraderInfo[]>(
     user && token ? 'traders' : null,
     api.getTraders,
     { refreshInterval: 5000 }
   );
 
+  // 根据交易模式过滤交易员列表
+  const traders = allTraders?.filter(trader => {
+    if (!tradingMode) return true; // 如果没有选择模式，显示所有
+    const isSpot = trader.exchange_id?.includes('_spot');
+    return tradingMode === 'spot' ? isSpot : !isSpot;
+  });
+
   // 加载AI模型和交易所配置
   useEffect(() => {
     const loadConfigs = async () => {
-      if (!user || !token) {
-        // 未登录时只加载公开的支持模型和交易所
-        try {
-          const [supportedModels, supportedExchanges] = await Promise.all([
-            api.getSupportedModels(),
-            api.getSupportedExchanges()
-          ]);
-          setSupportedModels(supportedModels);
-          setSupportedExchanges(supportedExchanges);
-        } catch (err) {
-          console.error('Failed to load supported configs:', err);
-        }
-        return;
-      }
-
       try {
+        // 同时加载用户配置和系统支持的选项
         const [modelConfigs, exchangeConfigs, supportedModels, supportedExchanges] = await Promise.all([
           api.getModelConfigs(),
           api.getExchangeConfigs(),
           api.getSupportedModels(),
           api.getSupportedExchanges()
         ]);
+        console.log('✅ 用户模型配置:', modelConfigs);
+        console.log('✅ 用户交易所配置:', exchangeConfigs);
+        console.log('✅ 系统支持的模型:', supportedModels);
+        console.log('✅ 系统支持的交易所:', supportedExchanges);
         setAllModels(modelConfigs);
         setAllExchanges(exchangeConfigs);
         setSupportedModels(supportedModels);
@@ -109,29 +106,45 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
 
   // 显示所有用户的模型和交易所配置（用于调试）
   const configuredModels = allModels || [];
-  const configuredExchanges = allExchanges || [];
+  
+  // 根据交易模式过滤交易所显示
+  const configuredExchanges = tradingMode 
+    ? (allExchanges || []).filter(exchange => {
+        const isSpot = exchange.id?.includes('_spot');
+        return tradingMode === 'spot' ? isSpot : !isSpot;
+      })
+    : allExchanges || [];
   
   // 只在创建交易员时使用已启用且配置完整的
   const enabledModels = allModels?.filter(m => m.enabled && m.apiKey) || [];
-  const enabledExchanges = allExchanges?.filter(e => {
+  
+  // 根据交易模式过滤已启用的交易所
+  const enabledExchanges = (allExchanges || []).filter(e => {
     if (!e.enabled) return false;
+    
+    // 根据交易模式过滤
+    if (tradingMode) {
+      const isSpot = e.id?.includes('_spot');
+      if (tradingMode === 'spot' && !isSpot) return false;
+      if (tradingMode === 'futures' && isSpot) return false;
+    }
 
     // Aster 交易所需要特殊字段
-    if (e.id === 'aster') {
+    if (e.id === 'aster' || e.id === 'aster_spot') {
       return e.asterUser && e.asterUser.trim() !== '' && 
              e.asterSigner && e.asterSigner.trim() !== '' && 
              e.asterPrivateKey && e.asterPrivateKey.trim() !== '';
     }
 
     // Hyperliquid 只需要私钥（作为apiKey）和钱包地址
-    if (e.id === 'hyperliquid') {
+    if (e.id === 'hyperliquid' || e.id === 'hyperliquid_spot') {
       return e.apiKey && e.apiKey.trim() !== '' && 
              e.hyperliquidWalletAddr && e.hyperliquidWalletAddr.trim() !== '';
     }
 
     // Binance 等其他交易所需要 apiKey 和 secretKey
     return e.apiKey && e.apiKey.trim() !== '' && e.secretKey && e.secretKey.trim() !== '';
-  }) || [];
+  });
 
   // 检查模型是否正在被运行中的交易员使用
   const isModelInUse = (modelId: string) => {
@@ -206,9 +219,18 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
         trading_symbols: data.trading_symbols,
         custom_prompt: data.custom_prompt,
         override_base_prompt: data.override_base_prompt,
+        system_prompt_template: data.system_prompt_template, // 添加系统提示词模板
         is_cross_margin: data.is_cross_margin,
         use_coin_pool: data.use_coin_pool,
-        use_oi_top: data.use_oi_top
+        use_oi_top: data.use_oi_top,
+        // 策略相关字段
+        strategy: data.strategy,
+        strategy_config: data.strategy_config,
+        // 现货交易配置
+        spot_order_type: data.spot_order_type,
+        spot_position_size_pct: data.spot_position_size_pct,
+        spot_take_profit_pct: data.spot_take_profit_pct,
+        spot_stop_loss_pct: data.spot_stop_loss_pct,
       };
       
       await api.updateTrader(editingTrader.trader_id, request);
@@ -377,7 +399,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
     }
   };
 
-  const handleSaveExchangeConfig = async (exchangeId: string, apiKey: string, secretKey?: string, testnet?: boolean, hyperliquidWalletAddr?: string, asterUser?: string, asterSigner?: string, asterPrivateKey?: string) => {
+  const handleSaveExchangeConfig = async (exchangeId: string, apiKey: string, secretKey?: string, testnet?: boolean, hyperliquidWalletAddr?: string, asterUser?: string, asterSigner?: string, asterPrivateKey?: string, gateioPassphrase?: string, okxPassphrase?: string) => {
     try {
       // 找到要配置的交易所（从supportedExchanges中）
       const exchangeToUpdate = supportedExchanges?.find(e => e.id === exchangeId);
@@ -401,7 +423,9 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             hyperliquidWalletAddr, 
             asterUser, 
             asterSigner, 
-            asterPrivateKey, 
+            asterPrivateKey,
+            gateioPassphrase,
+            okxPassphrase,
             enabled: true 
           } : e
         ) || [];
@@ -415,7 +439,9 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
           hyperliquidWalletAddr, 
           asterUser, 
           asterSigner, 
-          asterPrivateKey, 
+          asterPrivateKey,
+          gateioPassphrase,
+          okxPassphrase,
           enabled: true 
         };
         updatedExchanges = [...(allExchanges || []), newExchange];
@@ -433,7 +459,9 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
               hyperliquid_wallet_addr: exchange.hyperliquidWalletAddr || '',
               aster_user: exchange.asterUser || '',
               aster_signer: exchange.asterSigner || '',
-              aster_private_key: exchange.asterPrivateKey || ''
+              aster_private_key: exchange.asterPrivateKey || '',
+              gateio_passphrase: exchange.gateioPassphrase || '',
+              okx_passphrase: exchange.okxPassphrase || ''
             }
           ])
         )
@@ -773,6 +801,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
           availableExchanges={enabledExchanges}
           onSave={handleCreateTrader}
           onClose={() => setShowCreateModal(false)}
+          tradingMode={tradingMode}
         />
       )}
 
@@ -789,6 +818,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             setShowEditModal(false);
             setEditingTrader(null);
           }}
+          tradingMode={tradingMode}
         />
       )}
 
@@ -820,6 +850,7 @@ export function AITradersPage({ onTraderSelect }: AITradersPageProps) {
             setEditingExchange(null);
           }}
           language={language}
+          tradingMode={tradingMode}
         />
       )}
 
@@ -1148,14 +1179,16 @@ function ExchangeConfigModal({
   onSave,
   onDelete,
   onClose,
-  language
+  language,
+  tradingMode
 }: {
   allExchanges: Exchange[];
   editingExchangeId: string | null;
-  onSave: (exchangeId: string, apiKey: string, secretKey?: string, testnet?: boolean, hyperliquidWalletAddr?: string, asterUser?: string, asterSigner?: string, asterPrivateKey?: string) => Promise<void>;
+  onSave: (exchangeId: string, apiKey: string, secretKey?: string, testnet?: boolean, hyperliquidWalletAddr?: string, asterUser?: string, asterSigner?: string, asterPrivateKey?: string, gateioPassphrase?: string, okxPassphrase?: string) => Promise<void>;
   onDelete: (exchangeId: string) => void;
   onClose: () => void;
   language: Language;
+  tradingMode?: 'spot' | 'futures' | '';
 }) {
   const [selectedExchangeId, setSelectedExchangeId] = useState(editingExchangeId || '');
   const [apiKey, setApiKey] = useState('');
@@ -1198,18 +1231,23 @@ function ExchangeConfigModal({
     if (!selectedExchangeId) return;
     
     // 根据交易所类型验证不同字段
-    if (selectedExchange?.id === 'binance') {
+    if (selectedExchange?.id === 'binance' || selectedExchange?.id === 'binance_spot') {
       if (!apiKey.trim() || !secretKey.trim()) return;
       await onSave(selectedExchangeId, apiKey.trim(), secretKey.trim(), testnet);
-    } else if (selectedExchange?.id === 'hyperliquid') {
+    } else if (selectedExchange?.id === 'hyperliquid' || selectedExchange?.id === 'hyperliquid_spot') {
       if (!apiKey.trim() || !hyperliquidWalletAddr.trim()) return;
       await onSave(selectedExchangeId, apiKey.trim(), '', testnet, hyperliquidWalletAddr.trim());
-    } else if (selectedExchange?.id === 'aster') {
+    } else if (selectedExchange?.id === 'aster' || selectedExchange?.id === 'aster_spot') {
       if (!asterUser.trim() || !asterSigner.trim() || !asterPrivateKey.trim()) return;
       await onSave(selectedExchangeId, '', '', testnet, undefined, asterUser.trim(), asterSigner.trim(), asterPrivateKey.trim());
-    } else if (selectedExchange?.id === 'okx') {
-      if (!apiKey.trim() || !secretKey.trim() || !passphrase.trim()) return;
+    } else if (selectedExchange?.id === 'gateio_spot' || selectedExchange?.id === 'gateio_futures' || selectedExchange?.id?.includes('gateio')) {
+      // Gate.io: 只需要 API Key 和 Secret Key,不需要 passphrase
+      if (!apiKey.trim() || !secretKey.trim()) return;
       await onSave(selectedExchangeId, apiKey.trim(), secretKey.trim(), testnet);
+    } else if (selectedExchange?.id === 'okx_spot' || selectedExchange?.id === 'okx_futures' || selectedExchange?.id?.includes('okx')) {
+      // OKX: okxPassphrase 是第10个参数
+      if (!apiKey.trim() || !secretKey.trim() || !passphrase.trim()) return;
+      await onSave(selectedExchangeId, apiKey.trim(), secretKey.trim(), testnet, undefined, undefined, undefined, undefined, undefined, passphrase.trim());
     } else {
       // 默认情况（其他CEX交易所）
       if (!apiKey.trim() || !secretKey.trim()) return;
@@ -1217,8 +1255,13 @@ function ExchangeConfigModal({
     }
   };
 
-  // 可选择的交易所列表（所有支持的交易所）
-  const availableExchanges = allExchanges || [];
+  // 可选择的交易所列表（根据交易模式过滤）
+  const availableExchanges = tradingMode 
+    ? allExchanges.filter(exchange => {
+        const isSpot = exchange.id?.includes('_spot');
+        return tradingMode === 'spot' ? isSpot : !isSpot;
+      })
+    : allExchanges || [];
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -1331,7 +1374,7 @@ function ExchangeConfigModal({
                     />
                   </div>
 
-                  {selectedExchange.id === 'okx' && (
+                  {(selectedExchange.id === 'okx_spot' || selectedExchange.id === 'okx_futures' || selectedExchange.id?.includes('okx')) && (
                     <div>
                       <label className="block text-sm font-semibold mb-2" style={{ color: '#EAECEF' }}>
                         {t('passphrase', language)}
@@ -1347,6 +1390,8 @@ function ExchangeConfigModal({
                       />
                     </div>
                   )}
+                  
+
                 </>
               )}
 
@@ -1483,11 +1528,12 @@ function ExchangeConfigModal({
               type="submit"
               disabled={
                 !selectedExchange ||
-                (selectedExchange.id === 'binance' && (!apiKey.trim() || !secretKey.trim())) ||
-                (selectedExchange.id === 'okx' && (!apiKey.trim() || !secretKey.trim() || !passphrase.trim())) ||
-                (selectedExchange.id === 'hyperliquid' && (!apiKey.trim() || !hyperliquidWalletAddr.trim())) ||
-                (selectedExchange.id === 'aster' && (!asterUser.trim() || !asterSigner.trim() || !asterPrivateKey.trim())) ||
-                (selectedExchange.type === 'cex' && selectedExchange.id !== 'hyperliquid' && selectedExchange.id !== 'aster' && selectedExchange.id !== 'binance' && selectedExchange.id !== 'okx' && (!apiKey.trim() || !secretKey.trim()))
+                ((selectedExchange.id === 'binance' || selectedExchange.id === 'binance_spot') && (!apiKey.trim() || !secretKey.trim())) ||
+                ((selectedExchange.id === 'okx_spot' || selectedExchange.id === 'okx_futures' || selectedExchange.id?.includes('okx')) && (!apiKey.trim() || !secretKey.trim() || !passphrase.trim())) ||
+                ((selectedExchange.id === 'gateio_spot' || selectedExchange.id === 'gateio_futures' || selectedExchange.id?.includes('gateio')) && (!apiKey.trim() || !secretKey.trim())) ||
+                ((selectedExchange.id === 'hyperliquid' || selectedExchange.id === 'hyperliquid_spot') && (!apiKey.trim() || !hyperliquidWalletAddr.trim())) ||
+                ((selectedExchange.id === 'aster' || selectedExchange.id === 'aster_spot') && (!asterUser.trim() || !asterSigner.trim() || !asterPrivateKey.trim())) ||
+                (selectedExchange.type === 'cex' && !selectedExchange.id?.includes('hyperliquid') && !selectedExchange.id?.includes('aster') && !selectedExchange.id?.includes('binance') && !selectedExchange.id?.includes('okx') && !selectedExchange.id?.includes('gateio') && (!apiKey.trim() || !secretKey.trim()))
               }
               className="flex-1 px-4 py-2 rounded text-sm font-semibold disabled:opacity-50"
               style={{ background: '#F0B90B', color: '#000' }}

@@ -1,14 +1,14 @@
-# 📚 NOFX Documentation Center / 文档中心
+# 📚 NexTrade Documentation Center / 文档中心
 
-Welcome to the NOFX documentation! This page helps you find the right documentation quickly.
+Welcome to the NexTrade documentation! This page helps you find the right documentation quickly.
 
-欢迎来到 NOFX 文档中心！本页面帮助您快速找到所需文档。
+欢迎来到 NexTrade 文档中心！本页面帮助您快速找到所需文档。
 
 ---
 
 ## 🚀 Getting Started / 快速开始
 
-**New to NOFX? Start here!**
+**New to NexTrade? Start here!**
 
 | Document | Description | 描述 |
 |----------|-------------|------|
@@ -32,7 +32,7 @@ Welcome to the NOFX documentation! This page helps you find the right documentat
 
 ## 📘 User Guides / 使用指南
 
-**Learn how to use NOFX effectively**
+**Learn how to use NexTrade effectively**
 
 | Document | Description | 描述 |
 |----------|-------------|------|
@@ -61,7 +61,7 @@ Welcome to the NOFX documentation! This page helps you find the right documentat
 **Get Involved:**
 - 💬 [Telegram Community](https://t.me/nofx_dev_community)
 - 🐦 [Twitter @nofx_ai](https://x.com/nofx_ai)
-- 🐛 [Report Issues](https://github.com/tinkle-community/nofx/issues)
+- 🐛 [Report Issues](https://github.com/tinkle-community/nextrade/issues)
 
 ---
 
@@ -94,7 +94,7 @@ Welcome to the NOFX documentation! This page helps you find the right documentat
 
 ## 🗺️ Roadmap / 路线图
 
-**NOFX's strategic development plan and market expansion**
+**NexTrade's strategic development plan and market expansion**
 
 | Document | Description | 描述 |
 |----------|-------------|------|
@@ -125,8 +125,8 @@ Welcome to the NOFX documentation! This page helps you find the right documentat
 
 ### I want to...
 - 🚀 **Get started quickly** → [Getting Started](getting-started/README.md) / [快速开始](getting-started/README.zh-CN.md)
-- 🐛 **Report a bug** → [GitHub Issues](https://github.com/tinkle-community/nofx/issues/new)
-- 💡 **Suggest a feature** → [Feature Request](https://github.com/tinkle-community/nofx/issues/new?template=feature_request.md)
+- 🐛 **Report a bug** → [GitHub Issues](https://github.com/tinkle-community/nextrade/issues/new)
+- 💡 **Suggest a feature** → [Feature Request](https://github.com/tinkle-community/nextrade/issues/new?template=feature_request.md)
 - 🔒 **Report security issue** → [Security Policy](../SECURITY.md)
 - 💰 **Claim a bounty** → [Bounty Guide](community/bounty-guide.md)
 - 🤝 **Contribute code** → [Contributing Guide](../CONTRIBUTING.md)
@@ -166,9 +166,9 @@ Welcome to the NOFX documentation! This page helps you find the right documentat
 **Can't find what you're looking for?**
 
 1. **Search GitHub Issues** - Someone might have asked already
-2. **Join Telegram** - [NOFX Developer Community](https://t.me/nofx_dev_community)
-3. **Ask on Twitter** - Mention [@nofx_ai](https://x.com/nofx_ai)
-4. **Create an Issue** - [New Issue](https://github.com/tinkle-community/nofx/issues/new)
+2. **Join Telegram** - [NexTrade Developer Community](https://t.me/nofx_dev_community)
+3. **Ask on Twitter** - Mention [@nextrade_ai](https://x.com/nextrade_ai)
+4. **Create an Issue** - [New Issue](https://github.com/tinkle-community/nextrade/issues/new)
 
 ---
 

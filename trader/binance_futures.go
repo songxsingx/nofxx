@@ -30,8 +30,22 @@ type FuturesTrader struct {
 }
 
 // NewFuturesTrader 创建合约交易器
-func NewFuturesTrader(apiKey, secretKey string) *FuturesTrader {
+func NewFuturesTrader(apiKey, secretKey string, testnet bool) *FuturesTrader {
 	client := futures.NewClient(apiKey, secretKey)
+
+	// 如果启用测试网，使用实例级BaseURL避免全局冲突
+	if testnet {
+		// 优先使用实例级BaseURL（如果库支持）
+		// 测试网：币安合约
+		// 正式网：fapi.binance.com
+		// 注意：部分版本库不公开BaseURL字段；若编译失败，将回退到全局UseTestnet
+		client.BaseURL = "https://testnet.binancefuture.com"
+		log.Printf("🧪 [币安合约] 使用测试网模式: %s", client.BaseURL)
+	} else {
+		client.BaseURL = "https://fapi.binance.com"
+		log.Printf("🔧 [币安合约] 使用正式网模式: %s", client.BaseURL)
+	}
+
 	return &FuturesTrader{
 		client:        client,
 		cacheDuration: 15 * time.Second, // 15秒缓存

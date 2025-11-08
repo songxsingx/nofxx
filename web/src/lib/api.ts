@@ -15,6 +15,53 @@ import type {
 
 const API_BASE = '/api';
 
+// 重试配置
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1000; // 1秒
+
+// 带重试的fetch包装器
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit = {},
+  retries = MAX_RETRIES
+): Promise<Response> {
+  try {
+    const response = await fetch(url, options);
+    
+    // 如果是5xx错误，尝试重试
+    if (response.status >= 500 && retries > 0) {
+      console.warn(`请求失败 (${response.status})，${RETRY_DELAY/1000}秒后重试... (剩余${retries}次)`);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    
+    return response;
+  } catch (error) {
+    // 网络错误，尝试重试
+    if (retries > 0) {
+      console.warn(`网络错误，${RETRY_DELAY/1000}秒后重试... (剩余${retries}次)`, error);
+      await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+      return fetchWithRetry(url, options, retries - 1);
+    }
+    throw error;
+  }
+}
+
+// 处理响应错误
+async function handleResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let errorMessage = `HTTP ${response.status}`;
+    try {
+      const errorData = await response.json();
+      errorMessage = errorData.error || errorData.message || errorMessage;
+    } catch {
+      errorMessage = await response.text() || errorMessage;
+    }
+    throw new Error(errorMessage);
+  }
+  return response.json();
+}
+
 // Helper function to get auth headers
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('auth_token');
@@ -32,11 +79,10 @@ function getAuthHeaders(): Record<string, string> {
 export const api = {
   // AI交易员管理接口
   async getTraders(): Promise<TraderInfo[]> {
-    const res = await fetch(`${API_BASE}/my-traders`, {
+    const res = await fetchWithRetry(`${API_BASE}/my-traders`, {
       headers: getAuthHeaders(),
     });
-    if (!res.ok) throw new Error('获取trader列表失败');
-    return res.json();
+    return handleResponse<TraderInfo[]>(res);
   },
 
   // 获取公开的交易员列表（无需认证）
@@ -47,13 +93,12 @@ export const api = {
   },
 
   async createTrader(request: CreateTraderRequest): Promise<TraderInfo> {
-    const res = await fetch(`${API_BASE}/traders`, {
+    const res = await fetchWithRetry(`${API_BASE}/traders`, {
       method: 'POST',
       headers: getAuthHeaders(),
       body: JSON.stringify(request),
     });
-    if (!res.ok) throw new Error('创建交易员失败');
-    return res.json();
+    return handleResponse<TraderInfo>(res);
   },
 
   async deleteTrader(traderId: string): Promise<void> {
@@ -171,20 +216,30 @@ export const api = {
 
   // 获取账户信息（支持trader_id）
   async getAccount(traderId?: string): Promise<AccountInfo> {
-    const url = traderId
-      ? `${API_BASE}/account?trader_id=${traderId}`
-      : `${API_BASE}/account`;
-    const res = await fetch(url, {
-      cache: 'no-store',
-      headers: {
-        ...getAuthHeaders(),
-        'Cache-Control': 'no-cache',
-      },
-    });
-    if (!res.ok) throw new Error('获取账户信息失败');
-    const data = await res.json();
-    console.log('Account data fetched:', data);
-    return data;
+    try {
+      const url = traderId
+        ? `${API_BASE}/account?trader_id=${traderId}`
+        : `${API_BASE}/account`;
+      const res = await fetch(url, {
+        cache: 'no-store',
+        headers: {
+          ...getAuthHeaders(),
+          'Cache-Control': 'no-cache',
+        },
+      });
+      
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`获取账户信息失败: ${res.status} - ${errorText}`);
+      }
+      
+      const data = await res.json();
+      console.log('Account data fetched:', data);
+      return data;
+    } catch (error) {
+      console.error('获取账户信息错误:', error);
+      throw error;
+    }
   },
 
   // 获取持仓列表（支持trader_id）

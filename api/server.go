@@ -5,16 +5,17 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"nofx/auth"
-	"nofx/config"
-	"nofx/decision"
-	"nofx/manager"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+
+	"nextrade/auth"
+	"nextrade/config"
+	"nextrade/decision"
+	"nextrade/manager"
 )
 
 // Server HTTP API服务器
@@ -88,7 +89,7 @@ func (s *Server) setupRoutes() {
 		// 系统提示词模板管理（无需认证）
 		api.GET("/prompt-templates", s.handleGetPromptTemplates)
 		api.GET("/prompt-templates/:name", s.handleGetPromptTemplate)
-		
+
 		// 公开的竞赛数据（无需认证）
 		api.GET("/traders", s.handlePublicTraderList)
 		api.GET("/competition", s.handlePublicCompetition)
@@ -168,7 +169,7 @@ func (s *Server) handleGetSystemConfig(c *gin.Context) {
 	if val, err := strconv.Atoi(altcoinLeverageStr); err == nil && val > 0 {
 		altcoinLeverage = val
 	}
-	
+
 	// 获取内测模式配置
 	betaModeStr, _ := s.database.GetSystemConfig("beta_mode")
 	betaMode := betaModeStr == "true"
@@ -228,6 +229,14 @@ type CreateTraderRequest struct {
 	IsCrossMargin        *bool   `json:"is_cross_margin"`        // 指针类型，nil表示使用默认值true
 	UseCoinPool          bool    `json:"use_coin_pool"`
 	UseOITop             bool    `json:"use_oi_top"`
+	// 新增策略相关字段
+	Strategy       string                 `json:"strategy"`                  // "ai" or "hodl_band_profit"
+	StrategyConfig map[string]interface{} `json:"strategy_config,omitempty"` // 策略配置
+	// 现货交易配置
+	SpotOrderType       string `json:"spot_order_type"`        // 'market' 或 'limit'
+	SpotPositionSizePct int    `json:"spot_position_size_pct"` // 每次交易使用余额百分比(0-100)
+	SpotTakeProfitPct   int    `json:"spot_take_profit_pct"`   // 止盈百分比
+	SpotStopLossPct     int    `json:"spot_stop_loss_pct"`     // 止损百分比
 }
 
 type ModelConfig struct {
@@ -268,6 +277,8 @@ type UpdateExchangeConfigRequest struct {
 		AsterUser             string `json:"aster_user"`
 		AsterSigner           string `json:"aster_signer"`
 		AsterPrivateKey       string `json:"aster_private_key"`
+		GateioPassphrase      string `json:"gateio_passphrase"`
+		OKXPassphrase         string `json:"okx_passphrase"`
 	} `json:"exchanges"`
 }
 
@@ -277,6 +288,28 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 	var req CreateTraderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 增强参数验证
+	if req.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "交易员名称不能为空"})
+		return
+	}
+	if len(req.Name) > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "交易员名称不能超过50个字符"})
+		return
+	}
+	if req.InitialBalance <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "初始余额必须大于0"})
+		return
+	}
+	if req.InitialBalance > 1000000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "初始余额过大，请确认是否正确"})
+		return
+	}
+	if req.ScanIntervalMinutes < 0 || req.ScanIntervalMinutes > 1440 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "扫描间隔必须在0-1440分钟之间"})
 		return
 	}
 
@@ -347,6 +380,68 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		scanIntervalMinutes = 3 // 默认3分钟
 	}
 
+	// 设置策略默认值
+	strategy := "ai"
+	if req.Strategy != "" {
+		strategy = req.Strategy
+	}
+
+	// 校验策略配置
+	if strategy == "hodl_band_profit" {
+		if req.StrategyConfig == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "HODL策略需要配置参数"})
+			return
+		}
+		// 验证HODL策略配置
+		if baseAmount, ok := req.StrategyConfig["base_amount_usdt"].(float64); ok {
+			if baseAmount <= 0 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "HODL策略基础金额必须大于0"})
+				return
+			}
+		}
+		if profitTrigger, ok := req.StrategyConfig["profit_trigger_pct"].(float64); ok {
+			if profitTrigger <= 0 || profitTrigger > 100 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "盈利触发比例必须在0-100%之间"})
+				return
+			}
+		}
+		if reinvestRatio, ok := req.StrategyConfig["reinvest_ratio"].(float64); ok {
+			if reinvestRatio < 0 || reinvestRatio > 1 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "再投资比例必须在0-1之间"})
+				return
+			}
+		}
+	}
+
+	// 将策略配置序列化为JSON字符串
+	strategyConfigJSON := ""
+	if strategy == "hodl_band_profit" && req.StrategyConfig != nil {
+		if configBytes, err := json.Marshal(req.StrategyConfig); err == nil {
+			strategyConfigJSON = string(configBytes)
+		}
+	}
+
+	// 现货交易配置，使用前端传递的值或默认值
+	spotOrderType := "market"
+	if req.SpotOrderType != "" {
+		spotOrderType = req.SpotOrderType
+	}
+
+	spotPositionSizePct := 100
+	if req.SpotPositionSizePct > 0 {
+		spotPositionSizePct = req.SpotPositionSizePct
+	}
+
+	spotTakeProfitPct := 20
+	if req.SpotTakeProfitPct > 0 {
+		spotTakeProfitPct = req.SpotTakeProfitPct
+	}
+
+	spotStopLossPct := 10
+	if req.SpotStopLossPct > 0 {
+		spotStopLossPct = req.SpotStopLossPct
+	}
+
 	// 创建交易员配置（数据库实体）
 	trader := &config.TraderRecord{
 		ID:                   traderID,
@@ -365,7 +460,14 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 		SystemPromptTemplate: systemPromptTemplate,
 		IsCrossMargin:        isCrossMargin,
 		ScanIntervalMinutes:  scanIntervalMinutes,
-		IsRunning:            false,
+		Strategy:             strategy,
+		StrategyConfig:       strategyConfigJSON,
+		// 现货交易配置，使用前端传递的值
+		SpotOrderType:       spotOrderType,
+		SpotPositionSizePct: spotPositionSizePct,
+		SpotTakeProfitPct:   spotTakeProfitPct,
+		SpotStopLossPct:     spotStopLossPct,
+		IsRunning:           false,
 	}
 
 	// 保存到数据库
@@ -394,17 +496,28 @@ func (s *Server) handleCreateTrader(c *gin.Context) {
 
 // UpdateTraderRequest 更新交易员请求
 type UpdateTraderRequest struct {
-	Name                string  `json:"name" binding:"required"`
-	AIModelID           string  `json:"ai_model_id" binding:"required"`
-	ExchangeID          string  `json:"exchange_id" binding:"required"`
-	InitialBalance      float64 `json:"initial_balance"`
-	ScanIntervalMinutes int     `json:"scan_interval_minutes"`
-	BTCETHLeverage      int     `json:"btc_eth_leverage"`
-	AltcoinLeverage     int     `json:"altcoin_leverage"`
-	TradingSymbols      string  `json:"trading_symbols"`
-	CustomPrompt        string  `json:"custom_prompt"`
-	OverrideBasePrompt  bool    `json:"override_base_prompt"`
-	IsCrossMargin       *bool   `json:"is_cross_margin"`
+	Name                 string  `json:"name" binding:"required"`
+	AIModelID            string  `json:"ai_model_id" binding:"required"`
+	ExchangeID           string  `json:"exchange_id" binding:"required"`
+	InitialBalance       float64 `json:"initial_balance"`
+	ScanIntervalMinutes  int     `json:"scan_interval_minutes"`
+	BTCETHLeverage       int     `json:"btc_eth_leverage"`
+	AltcoinLeverage      int     `json:"altcoin_leverage"`
+	TradingSymbols       string  `json:"trading_symbols"`
+	CustomPrompt         string  `json:"custom_prompt"`
+	OverrideBasePrompt   bool    `json:"override_base_prompt"`
+	IsCrossMargin        *bool   `json:"is_cross_margin"`
+	UseCoinPool          bool    `json:"use_coin_pool"`
+	UseOITop             bool    `json:"use_oi_top"`
+	SystemPromptTemplate string  `json:"system_prompt_template"` // 系统提示词模板
+	// 策略相关字段
+	Strategy       string                 `json:"strategy"`
+	StrategyConfig map[string]interface{} `json:"strategy_config,omitempty"`
+	// 现货交易配置
+	SpotOrderType       string `json:"spot_order_type"`
+	SpotPositionSizePct int    `json:"spot_position_size_pct"`
+	SpotTakeProfitPct   int    `json:"spot_take_profit_pct"`
+	SpotStopLossPct     int    `json:"spot_stop_loss_pct"`
 }
 
 // handleUpdateTrader 更新交易员配置
@@ -460,6 +573,52 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		scanIntervalMinutes = existingTrader.ScanIntervalMinutes // 保持原值
 	}
 
+	// 设置系统提示词模板默认值
+	systemPromptTemplate := existingTrader.SystemPromptTemplate // 保持原值
+	if req.SystemPromptTemplate != "" {
+		systemPromptTemplate = req.SystemPromptTemplate
+	}
+
+	// 设置策略配置
+	strategy := "ai"
+	if req.Strategy != "" {
+		strategy = req.Strategy
+	} else {
+		strategy = existingTrader.Strategy // 保持原值
+	}
+
+	// 将策略配置序列化为JSON字符串
+	strategyConfigJSON := existingTrader.StrategyConfig // 保持原值
+	if strategy == "hodl_band_profit" && req.StrategyConfig != nil {
+		if configBytes, err := json.Marshal(req.StrategyConfig); err == nil {
+			strategyConfigJSON = string(configBytes)
+		}
+	} else if req.Strategy == "ai" {
+		// 如果修改为AI策略，清空策略配置
+		strategyConfigJSON = ""
+	}
+
+	// 现货交易配置，如果前端传了就使用新值，否则保持原值
+	spotOrderType := existingTrader.SpotOrderType
+	if req.SpotOrderType != "" {
+		spotOrderType = req.SpotOrderType
+	}
+
+	spotPositionSizePct := existingTrader.SpotPositionSizePct
+	if req.SpotPositionSizePct > 0 {
+		spotPositionSizePct = req.SpotPositionSizePct
+	}
+
+	spotTakeProfitPct := existingTrader.SpotTakeProfitPct
+	if req.SpotTakeProfitPct > 0 {
+		spotTakeProfitPct = req.SpotTakeProfitPct
+	}
+
+	spotStopLossPct := existingTrader.SpotStopLossPct
+	if req.SpotStopLossPct > 0 {
+		spotStopLossPct = req.SpotStopLossPct
+	}
+
 	// 更新交易员配置
 	trader := &config.TraderRecord{
 		ID:                   traderID,
@@ -471,12 +630,21 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		BTCETHLeverage:       btcEthLeverage,
 		AltcoinLeverage:      altcoinLeverage,
 		TradingSymbols:       req.TradingSymbols,
+		UseCoinPool:          req.UseCoinPool,
+		UseOITop:             req.UseOITop,
 		CustomPrompt:         req.CustomPrompt,
 		OverrideBasePrompt:   req.OverrideBasePrompt,
-		SystemPromptTemplate: existingTrader.SystemPromptTemplate, // 保持原值
+		SystemPromptTemplate: systemPromptTemplate,
 		IsCrossMargin:        isCrossMargin,
 		ScanIntervalMinutes:  scanIntervalMinutes,
-		IsRunning:            existingTrader.IsRunning, // 保持原值
+		Strategy:             strategy,
+		StrategyConfig:       strategyConfigJSON,
+		// 现货交易配置，使用新值
+		SpotOrderType:       spotOrderType,
+		SpotPositionSizePct: spotPositionSizePct,
+		SpotTakeProfitPct:   spotTakeProfitPct,
+		SpotStopLossPct:     spotStopLossPct,
+		IsRunning:           existingTrader.IsRunning, // 保持原值
 	}
 
 	// 更新数据库
@@ -492,13 +660,14 @@ func (s *Server) handleUpdateTrader(c *gin.Context) {
 		log.Printf("⚠️ 重新加载用户交易员到内存失败: %v", err)
 	}
 
-	log.Printf("✓ 更新交易员成功: %s (模型: %s, 交易所: %s)", req.Name, req.AIModelID, req.ExchangeID)
+	log.Printf("✓ 更新交易员成功: %s (模型: %s, 交易所: %s, 系统提示词模板: %s)", req.Name, req.AIModelID, req.ExchangeID, systemPromptTemplate)
 
 	c.JSON(http.StatusOK, gin.H{
-		"trader_id":   traderID,
-		"trader_name": req.Name,
-		"ai_model":    req.AIModelID,
-		"message":     "交易员更新成功",
+		"trader_id":              traderID,
+		"trader_name":            req.Name,
+		"ai_model":               req.AIModelID,
+		"system_prompt_template": systemPromptTemplate, // 返回系统提示词模板
+		"message":                "交易员更新成功",
 	})
 }
 
@@ -531,14 +700,14 @@ func (s *Server) handleDeleteTrader(c *gin.Context) {
 func (s *Server) handleStartTrader(c *gin.Context) {
 	userID := c.GetString("user_id")
 	traderID := c.Param("id")
-	
+
 	// 校验交易员是否属于当前用户
 	_, _, _, err := s.database.GetTraderConfig(userID, traderID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "交易员不存在或无访问权限"})
 		return
 	}
-	
+
 	trader, err := s.traderManager.GetTrader(traderID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "交易员不存在"})
@@ -574,14 +743,14 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 func (s *Server) handleStopTrader(c *gin.Context) {
 	userID := c.GetString("user_id")
 	traderID := c.Param("id")
-	
+
 	// 校验交易员是否属于当前用户
 	_, _, _, err := s.database.GetTraderConfig(userID, traderID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "交易员不存在或无访问权限"})
 		return
 	}
-	
+
 	trader, err := s.traderManager.GetTrader(traderID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "交易员不存在"})
@@ -711,7 +880,7 @@ func (s *Server) handleUpdateExchangeConfigs(c *gin.Context) {
 
 	// 更新每个交易所的配置
 	for exchangeID, exchangeData := range req.Exchanges {
-		err := s.database.UpdateExchange(userID, exchangeID, exchangeData.Enabled, exchangeData.APIKey, exchangeData.SecretKey, exchangeData.Testnet, exchangeData.HyperliquidWalletAddr, exchangeData.AsterUser, exchangeData.AsterSigner, exchangeData.AsterPrivateKey)
+		err := s.database.UpdateExchange(userID, exchangeID, exchangeData.Enabled, exchangeData.APIKey, exchangeData.SecretKey, exchangeData.Testnet, exchangeData.HyperliquidWalletAddr, exchangeData.AsterUser, exchangeData.AsterSigner, exchangeData.AsterPrivateKey, exchangeData.GateioPassphrase, exchangeData.OKXPassphrase)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("更新交易所 %s 失败: %v", exchangeID, err)})
 			return
@@ -841,22 +1010,40 @@ func (s *Server) handleGetTraderConfig(c *gin.Context) {
 	// 返回完整的模型ID，不做转换，保持与前端模型列表一致
 	aiModelID := traderConfig.AIModelID
 
+	// 解析策略配置（如果存在）
+	var strategyConfig map[string]interface{}
+	if traderConfig.StrategyConfig != "" {
+		if err := json.Unmarshal([]byte(traderConfig.StrategyConfig), &strategyConfig); err != nil {
+			log.Printf("⚠️ 解析策略配置失败: %v", err)
+			strategyConfig = nil
+		}
+	}
+
 	result := map[string]interface{}{
-		"trader_id":             traderConfig.ID,
-		"trader_name":           traderConfig.Name,
-		"ai_model":              aiModelID,
-		"exchange_id":           traderConfig.ExchangeID,
-		"initial_balance":       traderConfig.InitialBalance,
-		"scan_interval_minutes": traderConfig.ScanIntervalMinutes,
-		"btc_eth_leverage":      traderConfig.BTCETHLeverage,
-		"altcoin_leverage":      traderConfig.AltcoinLeverage,
-		"trading_symbols":       traderConfig.TradingSymbols,
-		"custom_prompt":         traderConfig.CustomPrompt,
-		"override_base_prompt":  traderConfig.OverrideBasePrompt,
-		"is_cross_margin":       traderConfig.IsCrossMargin,
-		"use_coin_pool":         traderConfig.UseCoinPool,
-		"use_oi_top":            traderConfig.UseOITop,
-		"is_running":            isRunning,
+		"trader_id":              traderConfig.ID,
+		"trader_name":            traderConfig.Name,
+		"ai_model":               aiModelID,
+		"exchange_id":            traderConfig.ExchangeID,
+		"initial_balance":        traderConfig.InitialBalance,
+		"scan_interval_minutes":  traderConfig.ScanIntervalMinutes,
+		"btc_eth_leverage":       traderConfig.BTCETHLeverage,
+		"altcoin_leverage":       traderConfig.AltcoinLeverage,
+		"trading_symbols":        traderConfig.TradingSymbols,
+		"custom_prompt":          traderConfig.CustomPrompt,
+		"override_base_prompt":   traderConfig.OverrideBasePrompt,
+		"system_prompt_template": traderConfig.SystemPromptTemplate, // 添加系统提示词模板
+		"is_cross_margin":        traderConfig.IsCrossMargin,
+		"use_coin_pool":          traderConfig.UseCoinPool,
+		"use_oi_top":             traderConfig.UseOITop,
+		"is_running":             isRunning,
+		// 策略相关字段
+		"strategy":        traderConfig.Strategy, // 策略类型
+		"strategy_config": strategyConfig,        // 策略配置
+		// 现货交易配置
+		"spot_order_type":        traderConfig.SpotOrderType,
+		"spot_position_size_pct": traderConfig.SpotPositionSizePct,
+		"spot_take_profit_pct":   traderConfig.SpotTakeProfitPct,
+		"spot_stop_loss_pct":     traderConfig.SpotStopLossPct,
 	}
 
 	c.JSON(http.StatusOK, result)
@@ -1581,7 +1768,7 @@ func (s *Server) handlePublicCompetition(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, competition)
 }
 
@@ -1594,7 +1781,7 @@ func (s *Server) handleTopTraders(c *gin.Context) {
 		})
 		return
 	}
-	
+
 	c.JSON(http.StatusOK, topTraders)
 }
 
@@ -1603,7 +1790,7 @@ func (s *Server) handleEquityHistoryBatch(c *gin.Context) {
 	var requestBody struct {
 		TraderIDs []string `json:"trader_ids"`
 	}
-	
+
 	// 尝试解析POST请求的JSON body
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
 		// 如果JSON解析失败，尝试从query参数获取（兼容GET请求）
@@ -1617,13 +1804,13 @@ func (s *Server) handleEquityHistoryBatch(c *gin.Context) {
 				})
 				return
 			}
-			
+
 			traders, ok := topTraders["traders"].([]map[string]interface{})
 			if !ok {
 				c.JSON(http.StatusInternalServerError, gin.H{"error": "交易员数据格式错误"})
 				return
 			}
-			
+
 			// 提取trader IDs
 			traderIDs := make([]string, 0, len(traders))
 			for _, trader := range traders {
@@ -1631,24 +1818,24 @@ func (s *Server) handleEquityHistoryBatch(c *gin.Context) {
 					traderIDs = append(traderIDs, traderID)
 				}
 			}
-			
+
 			result := s.getEquityHistoryForTraders(traderIDs)
 			c.JSON(http.StatusOK, result)
 			return
 		}
-		
+
 		// 解析逗号分隔的trader IDs
 		requestBody.TraderIDs = strings.Split(traderIDsParam, ",")
 		for i := range requestBody.TraderIDs {
 			requestBody.TraderIDs[i] = strings.TrimSpace(requestBody.TraderIDs[i])
 		}
 	}
-	
+
 	// 限制最多20个交易员，防止请求过大
 	if len(requestBody.TraderIDs) > 20 {
 		requestBody.TraderIDs = requestBody.TraderIDs[:20]
 	}
-	
+
 	result := s.getEquityHistoryForTraders(requestBody.TraderIDs)
 	c.JSON(http.StatusOK, result)
 }
@@ -1658,31 +1845,31 @@ func (s *Server) getEquityHistoryForTraders(traderIDs []string) map[string]inter
 	result := make(map[string]interface{})
 	histories := make(map[string]interface{})
 	errors := make(map[string]string)
-	
+
 	for _, traderID := range traderIDs {
 		if traderID == "" {
 			continue
 		}
-		
+
 		trader, err := s.traderManager.GetTrader(traderID)
 		if err != nil {
 			errors[traderID] = "交易员不存在"
 			continue
 		}
-		
+
 		// 获取历史数据（用于对比展示，限制数据量）
 		records, err := trader.GetDecisionLogger().GetLatestRecords(500)
 		if err != nil {
 			errors[traderID] = fmt.Sprintf("获取历史数据失败: %v", err)
 			continue
 		}
-		
+
 		// 构建收益率历史数据
 		history := make([]map[string]interface{}, 0, len(records))
 		for _, record := range records {
 			// 计算总权益（余额+未实现盈亏）
 			totalEquity := record.AccountState.TotalBalance + record.AccountState.TotalUnrealizedProfit
-			
+
 			history = append(history, map[string]interface{}{
 				"timestamp":    record.Timestamp,
 				"total_equity": totalEquity,
@@ -1690,16 +1877,16 @@ func (s *Server) getEquityHistoryForTraders(traderIDs []string) map[string]inter
 				"balance":      record.AccountState.TotalBalance,
 			})
 		}
-		
+
 		histories[traderID] = history
 	}
-	
+
 	result["histories"] = histories
 	result["count"] = len(histories)
 	if len(errors) > 0 {
 		result["errors"] = errors
 	}
-	
+
 	return result
 }
 
@@ -1733,4 +1920,3 @@ func (s *Server) handleGetPublicTraderConfig(c *gin.Context) {
 
 	c.JSON(http.StatusOK, result)
 }
-

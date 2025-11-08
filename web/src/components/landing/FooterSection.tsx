@@ -10,10 +10,9 @@ export default function FooterSection({ language }: FooterSectionProps) {
       <div className='max-w-[1200px] mx-auto px-6 py-10'>
         {/* Brand */}
         <div className='flex items-center gap-3 mb-8'>
-          <img src='/icons/nofx.svg' alt='NOFX Logo' className='w-8 h-8' />
           <div>
             <div className='text-lg font-bold' style={{ color: '#EAECEF' }}>
-              NOFX
+              AI Trading
             </div>
             <div className='text-xs' style={{ color: '#848E9C' }}>
               {t('futureStandardAI', language)}
@@ -34,7 +33,7 @@ export default function FooterSection({ language }: FooterSectionProps) {
               <li>
                 <a
                   className='hover:text-[#F0B90B]'
-                  href='https://github.com/tinkle-community/nofx'
+                  href='https://github.com/tinkle-community/nextrade'
                   target='_blank'
                   rel='noopener noreferrer'
                 >
@@ -54,7 +53,7 @@ export default function FooterSection({ language }: FooterSectionProps) {
               <li>
                 <a
                   className='hover:text-[#F0B90B]'
-                  href='https://x.com/nofx_ai'
+                  href='https://x.com/ai_trading'
                   target='_blank'
                   rel='noopener noreferrer'
                 >
@@ -75,7 +74,7 @@ export default function FooterSection({ language }: FooterSectionProps) {
               <li>
                 <a
                   className='hover:text-[#F0B90B]'
-                  href='https://github.com/tinkle-community/nofx/blob/main/README.md'
+                  href='https://github.com/tinkle-community/nextrade/blob/main/README.md'
                   target='_blank'
                   rel='noopener noreferrer'
                 >
@@ -85,7 +84,7 @@ export default function FooterSection({ language }: FooterSectionProps) {
               <li>
                 <a
                   className='hover:text-[#F0B90B]'
-                  href='https://github.com/tinkle-community/nofx/issues'
+                  href='https://github.com/tinkle-community/nextrade/issues'
                   target='_blank'
                   rel='noopener noreferrer'
                 >
@@ -95,7 +94,7 @@ export default function FooterSection({ language }: FooterSectionProps) {
               <li>
                 <a
                   className='hover:text-[#F0B90B]'
-                  href='https://github.com/tinkle-community/nofx/pulls'
+                  href='https://github.com/tinkle-community/nextrade/pulls'
                   target='_blank'
                   rel='noopener noreferrer'
                 >

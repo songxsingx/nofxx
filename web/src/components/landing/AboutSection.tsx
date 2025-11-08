@@ -36,7 +36,7 @@ export default function AboutSection({ language }: AboutSectionProps) {
                 className='text-sm font-semibold'
                 style={{ color: 'var(--brand-yellow)' }}
               >
-                {t('aboutNofx', language)}
+                {t('aboutNextrade', language)}
               </span>
             </motion.div>
 
@@ -44,19 +44,19 @@ export default function AboutSection({ language }: AboutSectionProps) {
               className='text-4xl font-bold'
               style={{ color: 'var(--brand-light-gray)' }}
             >
-              {t('whatIsNofx', language)}
+              {t('whatIsNextrade', language)}
             </h2>
             <p
               className='text-lg leading-relaxed'
               style={{ color: 'var(--text-secondary)' }}
             >
-              {t('nofxNotAnotherBot', language)} {t('nofxDescription1', language)} {t('nofxDescription2', language)}
+              {t('nextradeNotAnotherBot', language)} {t('nextradeDescription1', language)} {t('nextradeDescription2', language)}
             </p>
             <p
               className='text-lg leading-relaxed'
               style={{ color: 'var(--text-secondary)' }}
             >
-              {t('nofxDescription3', language)} {t('nofxDescription4', language)} {t('nofxDescription5', language)}
+              {t('nextradeDescription3', language)} {t('nextradeDescription4', language)} {t('nextradeDescription5', language)}
             </p>
             <motion.div
               className='flex items-center gap-3 pt-4'
@@ -98,21 +98,18 @@ export default function AboutSection({ language }: AboutSectionProps) {
             >
               <Typewriter
                 lines={[
-                  '$ git clone https://github.com/tinkle-community/nofx.git',
-                  '$ cd nofx',
+                  '$ git clone https://github.com/tinkle-community/nextrade.git',
+                  '$ cd nextrade',
                   '$ chmod +x start.sh',
                   '$ ./start.sh start --build',
                   t('startupMessages1', language),
                   t('startupMessages2', language),
                   t('startupMessages3', language),
                 ]}
-                typingSpeed={70}
-                lineDelay={900}
-                className='text-sm font-mono'
-                style={{
-                  color: '#00FF88',
-                  textShadow: '0 0 8px rgba(0,255,136,0.4)',
-                }}
+                typingSpeed={50}
+                lineDelay={1000}
+                className='font-mono text-sm'
+                style={{ color: 'var(--brand-yellow)' }}
               />
             </div>
           </div>

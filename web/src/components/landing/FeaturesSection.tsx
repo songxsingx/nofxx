@@ -23,10 +23,13 @@ export default function FeaturesSection({ language }: FeaturesSectionProps) {
               {t('coreFeatures', language)}
             </span>
           </motion.div>
-          <h2 className='text-4xl font-bold mb-4' style={{ color: 'var(--brand-light-gray)' }}>
-            {t('whyChooseNofx', language)}
+          <h2
+            className='text-3xl md:text-4xl font-bold text-center'
+            style={{ color: 'var(--brand-light-gray)' }}
+          >
+            {t('whyChooseNextrade', language)}
           </h2>
-          <p className='text-lg' style={{ color: 'var(--text-secondary)' }}>
+          <p className='text-lg text-center' style={{ color: 'var(--text-secondary)' }}>
             {t('openCommunityDriven', language)}
           </p>
         </motion.div>

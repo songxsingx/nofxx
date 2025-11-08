@@ -3,10 +3,7 @@ import useSWR from 'swr';
 import { api } from './lib/api';
 import { EquityChart } from './components/EquityChart';
 import { AITradersPage } from './components/AITradersPage';
-import { LoginPage } from './components/LoginPage';
-import { RegisterPage } from './components/RegisterPage';
 import { CompetitionPage } from './components/CompetitionPage';
-import { LandingPage } from './pages/LandingPage';
 import HeaderBar from './components/landing/HeaderBar';
 import AILearning from './components/AILearning';
 import { LanguageProvider, useLanguage } from './contexts/LanguageContext';
@@ -22,7 +19,9 @@ import type {
   TraderInfo,
 } from './types';
 
-type Page = 'competition' | 'traders' | 'trader';
+
+
+type Page = 'competition' | 'traders' | 'trader' | 'home';
 
 // 获取友好的AI模型名称
 function getModelDisplayName(modelId: string): string {
@@ -40,18 +39,22 @@ function getModelDisplayName(modelId: string): string {
 
 function App() {
   const { language, setLanguage } = useLanguage();
-  const { user, token, logout, isLoading } = useAuth();
-  const { config: systemConfig, loading: configLoading } = useSystemConfig();
+  const { user, token, tradingMode, setTradingMode, isLoading } = useAuth();
+  const { loading: configLoading } = useSystemConfig();
   const [route, setRoute] = useState(window.location.pathname);
 
-  // 从URL路径读取初始页面状态（支持刷新保持页面）
+  // 从 URL 路径读取初始页面状态（支持刷新保持页面）
   const getInitialPage = (): Page => {
     const path = window.location.pathname;
     const hash = window.location.hash.slice(1); // 去掉 #
     
     if (path === '/traders' || hash === 'traders') return 'traders';
     if (path === '/dashboard' || hash === 'trader' || hash === 'details') return 'trader';
-    return 'competition'; // 默认为竞赛页面
+    if (path === '/competition' || hash === 'competition') return 'competition';
+    // 如果访问根路径且没有选择交易模式，返回首页
+    if ((path === '/' || path === '') && !tradingMode) return 'home';
+    // 默认为交易员配置页面
+    return 'traders';
   };
 
   const [currentPage, setCurrentPage] = useState<Page>(getInitialPage());
@@ -70,6 +73,8 @@ function App() {
         setCurrentPage('trader');
       } else if (path === '/competition' || hash === 'competition' || hash === '') {
         setCurrentPage('competition');
+      } else if ((path === '/' || path === '') && !tradingMode) {
+        setCurrentPage('home');
       }
       setRoute(path);
     };
@@ -80,7 +85,7 @@ function App() {
       window.removeEventListener('hashchange', handleRouteChange);
       window.removeEventListener('popstate', handleRouteChange);
     };
-  }, []);
+  }, [tradingMode]);
 
   // 切换页面时更新URL hash (当前通过按钮直接调用setCurrentPage，这个函数暂时保留用于未来扩展)
   // const navigateToPage = (page: Page) => {
@@ -89,7 +94,7 @@ function App() {
   // };
 
   // 获取trader列表（仅在用户登录时）
-  const { data: traders } = useSWR<TraderInfo[]>(
+  const { data: allTraders } = useSWR<TraderInfo[]>(
     user && token ? 'traders' : null, 
     api.getTraders, 
     {
@@ -97,12 +102,30 @@ function App() {
     }
   );
 
+  // 根据交易模式过滤交易员列表
+  const traders = allTraders?.filter(trader => {
+    if (!tradingMode) return true; // 如果没有选择模式，显示所有
+    const isSpot = trader.exchange_id?.includes('_spot');
+    return tradingMode === 'spot' ? isSpot : !isSpot;
+  });
+
   // 当获取到traders后，设置默认选中第一个
   useEffect(() => {
     if (traders && traders.length > 0 && !selectedTraderId) {
       setSelectedTraderId(traders[0].trader_id);
     }
   }, [traders, selectedTraderId]);
+
+  // 当交易模式切换时，检查当前选中的交易员是否在新模式的列表中
+  useEffect(() => {
+    if (traders && traders.length > 0 && selectedTraderId) {
+      const isCurrentTraderInList = traders.some(t => t.trader_id === selectedTraderId);
+      if (!isCurrentTraderInList) {
+        // 如果当前交易员不在新模式的列表中，切换到第一个
+        setSelectedTraderId(traders[0].trader_id);
+      }
+    }
+  }, [tradingMode, traders]);
 
   // 如果在trader页面，获取该trader的数据
   const { data: status } = useSWR<SystemStatus>(
@@ -205,47 +228,163 @@ function App() {
     );
   }
 
-  // Handle specific routes regardless of authentication
-  if (route === '/login') {
-    return <LoginPage />;
+  // 管理员模式: 将任何登录/注册路由重定向到首页
+  if (route === '/login' || route === '/register') {
+    window.history.replaceState({}, '', '/');
+    setRoute('/');
+    return null;
   }
-  if (route === '/register') {
-    return <RegisterPage />;
+
+  // 首页显示现货和合约选择
+  if (route === '/' || route === '') {
+    return (
+      <div className="min-h-screen" style={{ background: '#0B0E11', color: '#EAECEF' }}>
+        <HeaderBar 
+          isLoggedIn={!!user} 
+          currentPage="home"
+          language={language}
+          onLanguageChange={setLanguage}
+          user={user}
+          tradingMode={tradingMode}
+          onTradingModeChange={setTradingMode}
+          onPageChange={(page) => {
+            if (page === 'competition') {
+              window.history.pushState({}, '', '/competition');
+              setRoute('/competition');
+              setCurrentPage('competition');
+            } else if (page === 'traders') {
+              window.history.pushState({}, '', '/traders');
+              setRoute('/traders');
+              setCurrentPage('traders');
+            } else if (page === 'trader') {
+              window.history.pushState({}, '', '/dashboard');
+              setRoute('/dashboard');
+              setCurrentPage('trader');
+            }
+          }}
+        />
+        
+        {/* 模式选择页面 */}
+        <main className="flex items-center justify-center pt-20" style={{ minHeight: 'calc(100vh - 80px)' }}>
+          <div className="w-full max-w-4xl px-4">
+            {/* 标题 */}
+            <div className="text-center mb-12">
+              <h1 className="text-4xl font-bold mb-4" style={{ color: '#EAECEF' }}>
+                欢迎使用 NexTrade 系统
+              </h1>
+              <p className="text-lg" style={{ color: '#848E9C' }}>
+                请选择您的交易模式，系统将为您提供相应的功能和配置
+              </p>
+            </div>
+
+            {/* 模式选择卡片 */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12">
+              {/* 现货交易模式 */}
+              <div 
+                className={`rounded-xl p-8 border-2 transition-all duration-300 cursor-pointer hover:scale-105 hover:shadow-2xl ${
+                  tradingMode === 'spot' 
+                    ? 'border-[#F0B90B] bg-gradient-to-br from-[#0B0E11] to-[#1a1f2c] shadow-lg' 
+                    : 'border-[#2B3139] bg-[#0B0E11] hover:border-[#F0B90B]'
+                }`}
+                onClick={() => setTradingMode('spot')}
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-6xl mb-6">💰</div>
+                  <h3 className="text-2xl font-bold mb-4">现货交易</h3>
+                  <p className="text-[#848E9C] mb-6 leading-relaxed">
+                    低风险，适合长期持有<br/>
+                    支持HODL波段盈利定投<br/>
+                    无杠杆交易<br/>
+                    支持多种策略模板
+                  </p>
+                  <div className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                    tradingMode === 'spot' 
+                      ? 'bg-[#F0B90B] text-black' 
+                      : 'bg-[#1E2329] text-[#848E9C] border border-[#2B3139]'
+                  }`}>
+                    {tradingMode === 'spot' ? '✓ 已选择' : '选择现货'}
+                  </div>
+                </div>
+              </div>
+
+              {/* 合约交易模式 */}
+              <div 
+                className={`rounded-xl p-8 border-2 transition-all duration-300 cursor-pointer hover:scale-105 hover:shadow-2xl ${
+                  tradingMode === 'futures' 
+                    ? 'border-[#F0B90B] bg-gradient-to-br from-[#0B0E11] to-[#1a1f2c] shadow-lg' 
+                    : 'border-[#2B3139] bg-[#0B0E11] hover:border-[#F0B90B]'
+                }`}
+                onClick={() => setTradingMode('futures')}
+              >
+                <div className="flex flex-col items-center text-center">
+                  <div className="text-6xl mb-6">⚡</div>
+                  <h3 className="text-2xl font-bold mb-4">合约交易</h3>
+                  <p className="text-[#848E9C] mb-6 leading-relaxed">
+                    高收益，高风险<br/>
+                    支持杠杆交易<br/>
+                    多空双向操作<br/>
+                    专业风控管理
+                  </p>
+                  <div className={`px-6 py-3 rounded-lg font-semibold transition-colors ${
+                    tradingMode === 'futures' 
+                      ? 'bg-[#F0B90B] text-black' 
+                      : 'bg-[#1E2329] text-[#848E9C] border border-[#2B3139]'
+                  }`}>
+                    {tradingMode === 'futures' ? '✓ 已选择' : '选择合约'}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 开始按钮 */}
+            {tradingMode && (
+              <div className="text-center">
+                <button
+                  onClick={() => {
+                    window.history.pushState({}, '', '/traders');
+                    setRoute('/traders');
+                    setCurrentPage('traders');
+                  }}
+                  className="px-12 py-4 bg-[#F0B90B] text-black text-lg font-bold rounded-lg hover:bg-[#E1A706] transition-all duration-300 hover:scale-105 shadow-lg"
+                >
+                  开始使用 {tradingMode === 'spot' ? '现货交易' : '合约交易'}
+                </button>
+                <p className="text-sm mt-4" style={{ color: '#848E9C' }}>
+                  您可以在后续使用中随时切换交易模式
+                </p>
+              </div>
+            )}
+          </div>
+        </main>
+      </div>
+    );
   }
+
   if (route === '/competition') {
     return (
       <div className="min-h-screen" style={{ background: '#000000', color: '#EAECEF' }}>
         <HeaderBar 
- 
           isLoggedIn={!!user} 
           currentPage="competition"
           language={language}
           onLanguageChange={setLanguage}
           user={user}
-          onLogout={logout}
-          isAdminMode={systemConfig?.admin_mode}
+          tradingMode={tradingMode}
+          onTradingModeChange={setTradingMode}
           onPageChange={(page) => {
-            console.log('Competition page onPageChange called with:', page);
-            console.log('Current route:', route, 'Current page:', currentPage);
-            
             if (page === 'competition') {
-              console.log('Navigating to competition');
               window.history.pushState({}, '', '/competition');
               setRoute('/competition');
               setCurrentPage('competition');
             } else if (page === 'traders') {
-              console.log('Navigating to traders');
               window.history.pushState({}, '', '/traders');
               setRoute('/traders');
               setCurrentPage('traders');
             } else if (page === 'trader') {
-              console.log('Navigating to trader/dashboard');
               window.history.pushState({}, '', '/dashboard');
               setRoute('/dashboard');
               setCurrentPage('trader');
             }
-            
-            console.log('After navigation - route:', route, 'currentPage:', currentPage);
           }}
         />
         <main className="max-w-[1920px] mx-auto px-6 py-6 pt-24">
@@ -253,22 +392,6 @@ function App() {
         </main>
       </div>
     );
-  }
-  
-  // Show landing page for root route - redirect to traders page
-  if (route === '/' || route === '') {
-    // Redirect to traders page as default home
-    window.history.replaceState({}, '', '/traders');
-    setRoute('/traders');
-    setCurrentPage('traders');
-    // Return null to avoid flashing, the useEffect will handle the re-render
-    return null;
-  }
-  
-  // Show main app for authenticated users on other routes
-  if (!systemConfig?.admin_mode && (!user || !token)) {
-    // Default to landing page when not authenticated and no specific route
-    return <LandingPage />;
   }
 
   return (
@@ -279,8 +402,8 @@ function App() {
         language={language}
         onLanguageChange={setLanguage}
         user={user}
-        onLogout={logout}
-        isAdminMode={systemConfig?.admin_mode}
+        tradingMode={tradingMode}
+        onTradingModeChange={setTradingMode}
         onPageChange={(page) => {
           console.log('Main app onPageChange called with:', page);
           

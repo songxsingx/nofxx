@@ -1,13 +1,13 @@
 services:
   # Backend service (API and core logic)
-  nofx:
+  nextrade:
     build:
       context: .
       dockerfile: ./docker/Dockerfile.backend
-    container_name: nofx-trading
+    container_name: nextrade-trading
     restart: unless-stopped
     ports:
-      - "${NOFX_BACKEND_PORT:-8080}:8080"
+      - "${NEXTRADE_BACKEND_PORT:-8080}:8080"
     volumes:
       - ./config.json:/app/config.json:ro
       # - ./config.db:/app/config.db  # 注释掉，让数据库在容器内创建
@@ -16,9 +16,9 @@ services:
       - ./prompts:/app/prompts
       - /etc/localtime:/etc/localtime:ro  # Sync host time
     environment:
-      - TZ=${NOFX_TIMEZONE:-Asia/Shanghai}  # Set timezone
+      - TZ=${NEXTRADE_TIMEZONE:-Asia/Shanghai}  # Set timezone
     networks:
-      - nofx-network
+      - nextrade-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
@@ -27,18 +27,18 @@ services:
       start_period: 60s
 
   # Frontend service (static serving and proxy)
-  nofx-frontend:
+  nextrade-frontend:
     build:
       context: .
       dockerfile: ./docker/Dockerfile.frontend
-    container_name: nofx-frontend
+    container_name: nextrade-frontend
     restart: unless-stopped
     ports:
-      - "${NOFX_FRONTEND_PORT:-3000}:80"
+      - "${NEXTRADE_FRONTEND_PORT:-3000}:80"
     networks:
-      - nofx-network
+      - nextrade-network
     depends_on:
-      - nofx
+      - nextrade
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
       interval: 30s
@@ -47,5 +47,5 @@ services:
       start_period: 5s
 
 networks:
-  nofx-network:
+  nextrade-network:
     driver: bridge
