@@ -38,6 +38,41 @@ func (o *OKXClient) GetOpenPositions() ([]Position, error) {
 	return []Position{}, nil
 }
 func (o *OKXClient) PlaceOrder(symbol, side, orderType string, qty, price float64) (*Order, error) {
+	// 参数验证
+	if symbol == "" {
+		return nil, fmt.Errorf("symbol不能为空")
+	}
+	if qty <= 0 {
+		return nil, fmt.Errorf("数量必须大于0, 当前: %.8f", qty)
+	}
+	if side != "BUY" && side != "SELL" && side != "LONG" && side != "SHORT" {
+		return nil, fmt.Errorf("无效的方向: %s (有效值: BUY/SELL/LONG/SHORT)", side)
+	}
+	if orderType != "market" && orderType != "limit" {
+		return nil, fmt.Errorf("无效的订单类型: %s (有效值: market/limit)", orderType)
+	}
+
+	// OKX现货和合约的区分处理
+	if o.IsSpot() {
+		// 现货下单逻辑
+		// ⚠️ 关键：现货市价单不应设置 TimeInForce
+		if orderType == "market" {
+			// 市价单：不设置价格和TimeInForce
+			if price > 0 {
+				return nil, fmt.Errorf("OKX现货市价单不应指定价格")
+			}
+		} else if orderType == "limit" {
+			// 限价单：必须设置价格
+			if price <= 0 {
+				return nil, fmt.Errorf("OKX现货限价单必须指定价格")
+			}
+		}
+	} else {
+		// 合约下单逻辑
+		// TODO: 实现真实的OKX合约下单逻辑
+	}
+
+	// TODO: 实现真实的OKX API调用
 	return &Order{ID: fmt.Sprintf("okx-%s", symbol), Status: "FILLED"}, nil
 }
 func (o *OKXClient) CancelOrder(orderID string) error { return nil }

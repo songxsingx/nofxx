@@ -327,6 +327,17 @@ func (g *GateioClient) GetOpenPositions() ([]Position, error) {
 
 // PlaceOrder 下单
 func (g *GateioClient) PlaceOrder(symbol, side, orderType string, qty, price float64) (*Order, error) {
+	// ⚠️ 参数验证（增强代码健壮性）
+	if symbol == "" {
+		return nil, fmt.Errorf("symbol不能为空")
+	}
+	if qty <= 0 {
+		return nil, fmt.Errorf("数量必须大于0, 当前: %.8f", qty)
+	}
+	if orderType != "market" && orderType != "limit" {
+		return nil, fmt.Errorf("无效的订单类型: %s (有效值: market/limit)", orderType)
+	}
+
 	symbol = g.normalizeSymbol(symbol)
 
 	if g.IsSpot() {

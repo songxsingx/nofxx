@@ -453,7 +453,18 @@ func extractDecisions(response string) ([]Decision, error) {
 	// 解析JSON
 	var decisions []Decision
 	if err := json.Unmarshal([]byte(jsonContent), &decisions); err != nil {
+		// 🛡️ 容错处理：检查是否是纯数字数组（AI误输出技术指标）
+		var numbers []float64
+		if numErr := json.Unmarshal([]byte(jsonContent), &numbers); numErr == nil {
+			// AI 返回了数字数组而不是决策对象，这是格式错误
+			return nil, fmt.Errorf("AI返回了数字数组而非决策对象（可能是技术指标数据），请检查提示词。原始内容: %s", jsonContent)
+		}
 		return nil, fmt.Errorf("JSON解析失败: %w\nJSON内容: %s", err, jsonContent)
+	}
+
+	// 验证是否为空数组或包含有效决策
+	if len(decisions) == 0 {
+		return nil, fmt.Errorf("AI返回了空决策数组")
 	}
 
 	return decisions, nil
@@ -502,6 +513,14 @@ func findMatchingBracket(s string, start int) int {
 
 // validateDecision 验证单个决策的有效性
 func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoinLeverage int) error {
+	// ⚠️ 参数验证（增强代码健壮性）
+	if d == nil {
+		return fmt.Errorf("决策对象为空")
+	}
+	if accountEquity <= 0 {
+		return fmt.Errorf("账户净值必须大于0: %.2f", accountEquity)
+	}
+
 	// 验证action
 	validActions := map[string]bool{
 		"open_long":   true,
@@ -513,7 +532,12 @@ func validateDecision(d *Decision, accountEquity float64, btcEthLeverage, altcoi
 	}
 
 	if !validActions[d.Action] {
-		return fmt.Errorf("无效的action: %s", d.Action)
+		return fmt.Errorf("无效的action: %s (有效值: open_long, open_short, close_long, close_short, hold, wait)", d.Action)
+	}
+
+	// 验证symbol不能为空（除了wait/hold）
+	if d.Action != "wait" && d.Action != "hold" && d.Symbol == "" {
+		return fmt.Errorf("action=%s 时 symbol 不能为空", d.Action)
 	}
 
 	// 开仓操作必须提供完整参数

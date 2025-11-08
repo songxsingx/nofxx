@@ -997,15 +997,32 @@ func (at *AutoTrader) executeDecisionWithExchangeClient(decision *decision.Decis
 }
 
 func (at *AutoTrader) execOpenLongExchange(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	// ⚠️ 参数验证（增强代码健壮性）
+	if decision == nil {
+		return fmt.Errorf("决策对象为空")
+	}
+	if decision.Symbol == "" {
+		return fmt.Errorf("交易对symbol不能为空")
+	}
+	if decision.PositionSizeUSD <= 0 {
+		return fmt.Errorf("仓位大小必须大于0: %.2f USD", decision.PositionSizeUSD)
+	}
+	if at.exchangeClient == nil {
+		return fmt.Errorf("交易所客户端未初始化")
+	}
+
 	log.Printf("  📈 开多仓(统一客户端): %s", decision.Symbol)
 	marketData, err := market.Get(decision.Symbol)
 	if err != nil {
-		return err
+		return fmt.Errorf("获取市场数据失败: %w", err)
 	}
 	if marketData.CurrentPrice <= 0 {
-		return fmt.Errorf("无法获取市场价格")
+		return fmt.Errorf("无效的市场价格: %.2f", marketData.CurrentPrice)
 	}
 	qty := decision.PositionSizeUSD / marketData.CurrentPrice
+	if qty <= 0 {
+		return fmt.Errorf("计算的交易数量无效: %.8f", qty)
+	}
 	actionRecord.Quantity = qty
 	actionRecord.Price = marketData.CurrentPrice
 	// 现货BUY，合约LONG
@@ -1016,7 +1033,10 @@ func (at *AutoTrader) execOpenLongExchange(decision *decision.Decision, actionRe
 	}
 	order, err := at.exchangeClient.PlaceOrder(decision.Symbol, side, orderType, qty, 0)
 	if err != nil {
-		return err
+		return fmt.Errorf("下单失败: %w", err)
+	}
+	if order == nil {
+		return fmt.Errorf("下单返回结果为空")
 	}
 	log.Printf("  ✓ 开仓成功(统一客户端)，订单ID: %s, 数量: %.4f", order.ID, qty)
 	posKey := decision.Symbol + "_long"
@@ -1025,15 +1045,32 @@ func (at *AutoTrader) execOpenLongExchange(decision *decision.Decision, actionRe
 }
 
 func (at *AutoTrader) execOpenShortExchange(decision *decision.Decision, actionRecord *logger.DecisionAction) error {
+	// ⚠️ 参数验证（增强代码健壮性）
+	if decision == nil {
+		return fmt.Errorf("决策对象为空")
+	}
+	if decision.Symbol == "" {
+		return fmt.Errorf("交易对symbol不能为空")
+	}
+	if decision.PositionSizeUSD <= 0 {
+		return fmt.Errorf("仓位大小必须大于0: %.2f USD", decision.PositionSizeUSD)
+	}
+	if at.exchangeClient == nil {
+		return fmt.Errorf("交易所客户端未初始化")
+	}
+
 	log.Printf("  📉 开空仓(统一客户端): %s", decision.Symbol)
 	marketData, err := market.Get(decision.Symbol)
 	if err != nil {
-		return err
+		return fmt.Errorf("获取市场数据失败: %w", err)
 	}
 	if marketData.CurrentPrice <= 0 {
-		return fmt.Errorf("无法获取市场价格")
+		return fmt.Errorf("无效的市场价格: %.2f", marketData.CurrentPrice)
 	}
 	qty := decision.PositionSizeUSD / marketData.CurrentPrice
+	if qty <= 0 {
+		return fmt.Errorf("计算的交易数量无效: %.8f", qty)
+	}
 	actionRecord.Quantity = qty
 	actionRecord.Price = marketData.CurrentPrice
 	// 现货SELL，合约SHORT
@@ -1044,7 +1081,10 @@ func (at *AutoTrader) execOpenShortExchange(decision *decision.Decision, actionR
 	}
 	order, err := at.exchangeClient.PlaceOrder(decision.Symbol, side, orderType, qty, 0)
 	if err != nil {
-		return err
+		return fmt.Errorf("下单失败: %w", err)
+	}
+	if order == nil {
+		return fmt.Errorf("下单返回结果为空")
 	}
 	log.Printf("  ✓ 开仓成功(统一客户端)，订单ID: %s, 数量: %.4f", order.ID, qty)
 	posKey := decision.Symbol + "_short"
