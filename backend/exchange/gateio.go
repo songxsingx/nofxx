@@ -357,7 +357,22 @@ func (g *GateioClient) PlaceOrder(symbol, side, orderType string, qty, price flo
 	} else {
 		// 合约下单
 		contract := g.normalizeContract(symbol)
-		size := int64(qty)
+
+		// ⚠️ 关键：Gate.io 合约的 Size 是合约张数（整数），需要从币数量转换
+		// 1张合约 = 1 USD（USDT本位），所以需要用 qty * price 计算张数
+		var size int64
+		if price > 0 {
+			// 限价单：使用指定价格
+			size = int64(qty * price)
+		} else {
+			// 市价单：需要先获取当前价格
+			ticker, err := g.GetTicker(symbol)
+			if err != nil {
+				return nil, fmt.Errorf("获取市价失败: %w", err)
+			}
+			size = int64(qty * ticker.Last)
+		}
+
 		if side == "SELL" || side == "SHORT" {
 			size = -size
 		}
