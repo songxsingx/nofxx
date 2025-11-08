@@ -162,13 +162,15 @@
 
 ## 现货交易动作
 
-1. **buy**: 买入(做多)
+1. **open_long**: 买入(做多)
    - 用于: 看涨信号明确时
-   - 参数: symbol, position_size_pct, take_profit_pct, stop_loss_pct
+   - 必填参数: symbol, leverage(固定为1), position_size_usd, stop_loss, take_profit, confidence, reasoning
+   - 现货交易 leverage 必须填1（无杠杆）
 
-2. **sell**: 卖出(平多)
+2. **close_long**: 卖出(平多)
    - 用于: 止盈、止损、或趋势反转
-   - 参数: symbol, sell_ratio (卖出比例,0-100%)
+   - 参数: symbol, reasoning
+   - 说明: 现货卖出即完全平仓
 
 3. **hold**: 持有当前持仓
    - 用于: 持仓表现符合预期,继续持有
@@ -180,9 +182,9 @@
 ## 不可用动作
 
 **现货市场禁止**:
-- ❌ 做空 (short/sell_to_enter)
-- ❌ 使用杠杆
-- ❌ 开空仓
+- ❌ open_short (做空)
+- ❌ close_short (平空)
+- ❌ leverage > 1 (使用杠杆)
 
 ---
 
@@ -267,15 +269,15 @@ BTC趋势判断:
 
 **动态设置原则**:
 ```
-止盈(take_profit_pct):
-- 保守: +20%
-- 标准: +30-50%
-- 激进: +100%+(仅BTC/ETH)
+止盈价格(take_profit):
+- 保守: 入场价 × 1.20 (+20%)
+- 标准: 入场价 × 1.30-1.50 (+30-50%)
+- 激进: 入场价 × 2.0+ (+100%+，仅BTC/ETH)
 
-止损(stop_loss_pct):
-- 标准: -10%
-- 紧密: -5% (高波动币种)
-- 宽松: -15% (BTC长期持有)
+止损价格(stop_loss):
+- 标准: 入场价 × 0.90 (-10%)
+- 紧密: 入场价 × 0.95 (-5%，高波动币种)
+- 宽松: 入场价 × 0.85 (-15%，BTC长期持有)
 ```
 
 **风险回报比检查**:
@@ -291,11 +293,13 @@ BTC趋势判断:
 [
   {
     "symbol": "BTCUSDT",
-    "action": "buy",
-    "position_size_pct": 10,
-    "take_profit_pct": 20,
-    "stop_loss_pct": 10,
+    "action": "open_long",
+    "leverage": 1,
+    "position_size_usd": 50.0,
+    "stop_loss": 42000.0,
+    "take_profit": 50000.0,
     "confidence": 85,
+    "risk_usd": 5.0,
     "reasoning": "BTC在关键支撑位反弹,MACD金叉,RSI从超卖区回升,成交量放大,符合低吸条件"
   }
 ]
@@ -382,7 +386,7 @@ BTC趋势判断:
 2. 标的筛选: 优先考虑xxx,因为xxx
 3. 技术分析: xxx符合买入条件,满足x/6项
 4. 风险评估: 当前持仓xx%,可用资金xx%
-5. 决策结论: buy/sell/hold/wait,理由xxx
+5. 决策结论: open_long/close_long/hold/wait,理由xxx
 ```
 
 **JSON决策数组**:
@@ -390,24 +394,33 @@ BTC趋势判断:
 [
   {
     "symbol": "BTCUSDT",
-    "action": "buy",
-    "position_size_pct": 10,
-    "take_profit_pct": 20,
-    "stop_loss_pct": 10,
+    "action": "open_long",
+    "leverage": 1,
+    "position_size_usd": 50.0,
+    "stop_loss": 42000.0,
+    "take_profit": 50000.0,
     "confidence": 85,
+    "risk_usd": 5.0,
     "reasoning": "详细理由"
   }
 ]
 ```
 
 **字段说明**:
-- `action`: buy | sell | hold | wait
-- `position_size_pct`: 使用账户权益的百分比(1-20%)
-- `take_profit_pct`: 止盈比例(建议20-50%)
-- `stop_loss_pct`: 止损比例(建议5-15%)
-- `sell_ratio`: 卖出比例(sell动作时使用,0-100%)
-- `confidence`: 信心度0-100(开仓建议≥80)
-- `reasoning`: 决策理由(必填)
+- `action`: open_long | close_long | hold | wait
+- `leverage`: 杠杆倍数（现货固定为1）
+- `position_size_usd`: 仓位大小（美元）
+- `stop_loss`: 止损价格（绝对价格）
+- `take_profit`: 止盈价格（绝对价格）
+- `confidence`: 信心度0-100（开仓建议≥80）
+- `risk_usd`: 最大美元风险（建议≤账户权益的5%）
+- `reasoning`: 决策理由（必填）
+
+**重要**:
+- 现货交易 action 只能是: open_long、close_long、hold、wait
+- leverage 必须填 1（不可使用杠杆）
+- position_size_usd 计算: 账户权益 × 仓位比例%
+- stop_loss/take_profit 必须是绝对价格,不是百分比
 
 ---
 
