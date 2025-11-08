@@ -340,7 +340,10 @@ func (g *GateioClient) PlaceOrder(symbol, side, orderType string, qty, price flo
 
 		if orderType == "limit" && price > 0 {
 			order.Price = fmt.Sprintf("%.8f", price)
+			// 限价单可以设置 TimeInForce
+			order.TimeInForce = "gtc" // Good Till Cancelled
 		}
+		// 注意：市价单不需要设置 TimeInForce，否则会报错
 
 		result, _, err := g.spotClient.SpotApi.CreateOrder(g.ctx, order, nil)
 		if err != nil {
